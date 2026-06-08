@@ -77,6 +77,10 @@ npm run build:plugin  # -> synchronity-woocommerce-v<version>.zip
 | `DEFAULT_SITE_ID` | — | Optional default store to scope tools to |
 | `DEBUG` | `false` | Verbose logging to stderr |
 
+## Reviewing & testing
+
+New here or reviewing the connector? Follow the end-to-end walkthrough: [docs/reviewer-testing.md](docs/reviewer-testing.md).
+
 ## Privacy & support
 
 - Privacy Policy: [PRIVACY.md](PRIVACY.md) · hosted at [api.synchronity.app/privacy](https://api.synchronity.app/privacy)
