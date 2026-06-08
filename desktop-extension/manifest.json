@@ -1,0 +1,25 @@
+{
+  "manifest_version": "0.2",
+  "name": "synchronity",
+  "display_name": "Synchronity",
+  "version": "0.1.0",
+  "description": "Shop anything online with AI. Search, compare, and purchase across multiple stores via Synchronity.",
+  "author": { "name": "Themewire", "url": "https://themewire.co" },
+  "homepage": "https://synchronity.app",
+  "documentation": "https://api.synchronity.app/docs",
+  "support": "mailto:hello@themewire.co",
+  "icon": "icon.png",
+  "privacy_policies": ["https://api.synchronity.app/privacy"],
+  "server": {
+    "type": "node",
+    "entry_point": "server/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/index.js"],
+      "env": {
+        "GATEWAY_URL": "https://api.synchronity.app"
+      }
+    }
+  },
+  "tools_generated": true
+}

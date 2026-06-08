@@ -1,0 +1,27 @@
+{
+  "name": "synchronity",
+  "version": "0.1.0",
+  "description": "Synchronity — shop across connected stores from any AI assistant. MCP server + WooCommerce connector for the hosted Synchronity gateway.",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "author": "Themewire",
+  "homepage": "https://synchronity.app",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/themewireco/synchronity"
+  },
+  "workspaces": [
+    "packages/sdk",
+    "packages/mcp"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace=@synchronity/sdk && npm run build --workspace=@synchronity/mcp-server",
+    "typecheck": "npm run typecheck --workspace=@synchronity/mcp-server",
+    "build:mcpb": "node scripts/build-mcpb.mjs",
+    "build:plugin": "node scripts/build-plugin.mjs"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

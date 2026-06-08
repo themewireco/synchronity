@@ -1,0 +1,422 @@
+<?php
+/**
+ * Admin Settings — WooCommerce Settings tab for Synchronity.
+ */
+
+defined( 'ABSPATH' ) || exit;
+
+class AgentMesh_Settings {
+
+	public function __construct() {
+		add_filter( 'woocommerce_settings_tabs_array', [ $this, 'add_settings_tab' ], 50 );
+		add_action( 'woocommerce_settings_tabs_agentmesh', [ $this, 'output_settings' ] );
+		add_action( 'woocommerce_update_options_agentmesh', [ $this, 'save_settings' ] );
+		add_action( 'woocommerce_settings_tabs_agentmesh', [ $this, 'maybe_generate_site_id' ] );
+		// Custom field type that renders the Generate + Copy buttons under the Connector Key input.
+		add_action( 'woocommerce_admin_field_agentmesh_key_actions', [ $this, 'render_key_actions' ] );
+		// AJAX endpoint that mints a new key, pushes it to the gateway (when linked), and persists it.
+		add_action( 'wp_ajax_agentmesh_rotate_key', [ $this, 'ajax_rotate_key' ] );
+	}
+
+	public function add_settings_tab( array $tabs ): array {
+		$tabs['agentmesh'] = __( 'Synchronity', 'agentmesh-woocommerce' );
+		return $tabs;
+	}
+
+	public function output_settings(): void {
+		WC_Admin_Settings::output_fields( $this->get_settings() );
+	}
+
+	public function save_settings(): void {
+		WC_Admin_Settings::save_fields( $this->get_settings() );
+	}
+
+	/**
+	 * Auto-generate a site ID on first load if one doesn't exist.
+	 */
+	public function maybe_generate_site_id(): void {
+		if ( ! get_option( 'agentmesh_site_id' ) ) {
+			update_option( 'agentmesh_site_id', 'site_' . bin2hex( random_bytes( 8 ) ) );
+		}
+	}
+
+	public function get_settings(): array {
+		return [
+			[
+				'title' => __( 'Synchronity Settings', 'agentmesh-woocommerce' ),
+				'type'  => 'title',
+				'desc'  => __( 'Connect your WooCommerce store to the Synchronity network.', 'agentmesh-woocommerce' ),
+				'id'    => 'agentmesh_settings_section',
+			],
+
+			[
+				'title'   => __( 'Enable Synchronity', 'agentmesh-woocommerce' ),
+				'type'    => 'checkbox',
+				'desc'    => __( 'Enable the Synchronity connector API on this store.', 'agentmesh-woocommerce' ),
+				'id'      => 'agentmesh_enabled',
+				'default' => 'yes',
+			],
+
+			[
+				'title'       => __( 'Gateway URL', 'agentmesh-woocommerce' ),
+				'type'        => 'url',
+				'desc'        => __( 'The base URL of your Synchronity Gateway instance (e.g. https://agentmesh-production.up.railway.app).', 'agentmesh-woocommerce' ),
+				'id'          => 'agentmesh_gateway_url',
+				'placeholder' => 'https://agentmesh-production.up.railway.app',
+				'css'         => 'min-width:350px;',
+			],
+
+			[
+				'title'       => __( 'Connector Key', 'agentmesh-woocommerce' ),
+				'type'        => 'password',
+				'desc'        => __( 'The shared secret key the Gateway uses to authenticate requests to this connector. Click "Generate new key" to mint a new one — when the store is already linked, the new key is pushed to Synchronity automatically.', 'agentmesh-woocommerce' ),
+				'id'          => 'agentmesh_connector_key',
+				'placeholder' => 'amck_...',
+				'css'         => 'min-width:350px;',
+			],
+
+			[
+				// Renders Generate + Copy buttons below the Connector Key. No persistence on this row.
+				'type' => 'agentmesh_key_actions',
+				'id'   => 'agentmesh_connector_key_actions',
+			],
+
+			[
+				'title' => __( 'Site ID', 'agentmesh-woocommerce' ),
+				'type'  => 'text',
+				'desc'  => __( 'Your Synchronity-assigned site identifier. Auto-generated if empty.', 'agentmesh-woocommerce' ),
+				'id'    => 'agentmesh_site_id',
+				'css'   => 'min-width:350px;',
+			],
+
+			[
+				'title' => __( 'Permissions', 'agentmesh-woocommerce' ),
+				'type'  => 'title',
+				'id'    => 'agentmesh_permissions_section',
+			],
+
+			[
+				'title'   => __( 'Allow Cart Management', 'agentmesh-woocommerce' ),
+				'type'    => 'checkbox',
+				'desc'    => __( 'Allow AI agents to create and manage cart sessions on this store.', 'agentmesh-woocommerce' ),
+				'id'      => 'agentmesh_allow_cart',
+				'default' => 'yes',
+			],
+
+			[
+				'title'   => __( 'Allow Checkout Execution', 'agentmesh-woocommerce' ),
+				'type'    => 'checkbox',
+				'desc'    => __( 'Allow AI agents to place orders on behalf of users via delegation tokens.', 'agentmesh-woocommerce' ),
+				'id'      => 'agentmesh_allow_checkout',
+				'default' => 'yes',
+			],
+
+			[
+				'title'   => __( 'Read-Only Mode', 'agentmesh-woocommerce' ),
+				'type'    => 'checkbox',
+				'desc'    => __( 'Restrict the connector to product and manifest reads only. Disables cart and checkout.', 'agentmesh-woocommerce' ),
+				'id'      => 'agentmesh_read_only',
+				'default' => 'no',
+			],
+
+			[
+				'title' => __( 'Inline Payments (Paystack)', 'agentmesh-woocommerce' ),
+				'type'  => 'title',
+				'desc'  => __( 'Let AI agents initiate and complete payment inside the chat. Paystack keys are read from your Paystack for WooCommerce plugin settings when present.', 'agentmesh-woocommerce' ),
+				'id'    => 'agentmesh_payments_section',
+			],
+
+			[
+				'title'   => __( 'Enable Mobile Money', 'agentmesh-woocommerce' ),
+				'type'    => 'checkbox',
+				'desc'    => __( 'Offer in-chat mobile money payments (MTN, Vodafone, AirtelTigo). Requires a GHS store currency.', 'agentmesh-woocommerce' ),
+				'id'      => 'agentmesh_payment_enable_mobile_money',
+				'default' => 'yes',
+			],
+
+			[
+				'title'   => __( 'Enable Card', 'agentmesh-woocommerce' ),
+				'type'    => 'checkbox',
+				'desc'    => __( 'Offer card payments via a Paystack-hosted secure page (no card details touch the chat).', 'agentmesh-woocommerce' ),
+				'id'      => 'agentmesh_payment_enable_card',
+				'default' => 'yes',
+			],
+
+			[
+				'title'    => __( 'Paystack Webhook URL', 'agentmesh-woocommerce' ),
+				'type'     => 'text',
+				'desc'     => __( 'Paste this URL into your Paystack dashboard (Settings → API Keys & Webhooks → Webhook URL) so payments confirm automatically.', 'agentmesh-woocommerce' ),
+				'id'       => 'agentmesh_paystack_webhook_url_display',
+				'value'    => $this->get_paystack_webhook_url(),
+				'custom_attributes' => [ 'readonly' => 'readonly' ],
+				'css'      => 'min-width:450px;background:#f6f7f7;',
+			],
+
+			[
+				'type' => 'sectionend',
+				'id'   => 'agentmesh_payments_section',
+			],
+
+			// ── Product Add-ons (ACF) ───────────────────────────────────
+			[
+				'title' => __( 'Product Add-ons (ACF)', 'agentmesh-woocommerce' ),
+				'type'  => 'title',
+				'desc'  => $this->addons_section_desc(),
+				'id'    => 'agentmesh_addons_section',
+			],
+
+			[
+				'title'   => __( 'Enable Product Add-ons', 'agentmesh-woocommerce' ),
+				'type'    => 'checkbox',
+				'desc'    => __( 'Surface per-product options defined with Advanced Custom Fields (ACF) so AI agents can collect a buyer\'s choices. Requires the ACF plugin.', 'agentmesh-woocommerce' ),
+				'id'      => 'agentmesh_addons_enabled',
+				'default' => 'yes',
+			],
+
+			[
+				'title'   => __( 'Enable Grouped (Nested) Add-ons', 'agentmesh-woocommerce' ),
+				'type'    => 'checkbox',
+				'desc'    => __( 'Off by default. Enable only if this store builds product options as a NESTED ACF repeater (an outer repeater of groups, each with an inner repeater of priced options). When on, each outer row becomes its own add-on. Leave off for normal single fields / flat repeaters.', 'agentmesh-woocommerce' ),
+				'id'      => 'agentmesh_addon_grouped_enabled',
+				'default' => 'no',
+			],
+
+			[
+				'title'    => __( 'Hidden Add-on Fields', 'agentmesh-woocommerce' ),
+				'type'     => 'textarea',
+				'desc'     => __( 'Comma- or newline-separated list of ACF field names or keys to hide from add-ons (e.g. internal fields). Matching fields are never exposed.', 'agentmesh-woocommerce' ),
+				'id'       => 'agentmesh_addon_hidden_fields',
+				'css'      => 'min-width:450px;height:80px;',
+			],
+
+			[
+				'title'    => __( 'Add-on Price Map (JSON)', 'agentmesh-woocommerce' ),
+				'type'     => 'textarea',
+				'desc'     => __(
+					'Optional. JSON keyed by ACF add-on field name. Per add-on set ONE of: '
+					. '<code>{"&lt;field&gt;":{"amount":"10.00"}}</code> (fixed per-unit fee), '
+					. '<code>{"&lt;field&gt;":{"options":{"&lt;opt_value&gt;":"5.00"}}}</code> (per-option fees), or '
+					. '<code>{"&lt;field&gt;":{"price_field":"&lt;acf_field_key&gt;"}}</code> (read the fee from another ACF field on the product). '
+					. 'Amounts are in the store currency. Unmapped add-ons fall back to a repeater price subfield, a <code>(+N)</code>/<code>(-N)</code> label suffix, or free.',
+					'agentmesh-woocommerce'
+				),
+				'id'       => 'agentmesh_addon_price_map',
+				'css'      => 'min-width:450px;height:120px;font-family:monospace;',
+			],
+
+			[
+				'title'   => __( 'Add-on Pricing Mode', 'agentmesh-woocommerce' ),
+				'type'    => 'select',
+				'desc'    => __( '"Additive" (default): add-on prices are added on top of the product price. "Absolute": the line price is the sum of the selected option prices and the product base price is ignored — for builder/configurator products whose base price is just a placeholder.', 'agentmesh-woocommerce' ),
+				'id'      => 'agentmesh_addon_pricing_mode',
+				'default' => 'additive',
+				'options' => [
+					'additive' => __( 'Additive (base + add-ons)', 'agentmesh-woocommerce' ),
+					'absolute' => __( 'Absolute (sum of selected options)', 'agentmesh-woocommerce' ),
+				],
+			],
+
+			[
+				'title'    => __( 'Multi-select Add-on Groups', 'agentmesh-woocommerce' ),
+				'type'     => 'textarea',
+				'desc'     => __( 'Comma- or newline-separated list of add-on group titles that allow choosing MORE THAN ONE option (e.g. "Extra Toppings"). All other groups are single-choice. Applies to grouped (nested-repeater) add-ons.', 'agentmesh-woocommerce' ),
+				'id'       => 'agentmesh_addon_multi_groups',
+				'css'      => 'min-width:450px;height:60px;',
+			],
+
+			[
+				'type' => 'sectionend',
+				'id'   => 'agentmesh_addons_section',
+			],
+
+			[
+				'type' => 'sectionend',
+				'id'   => 'agentmesh_settings_section',
+			],
+		];
+	}
+
+	/**
+	 * Section description; warns (read-only note) when ACF is not detected.
+	 */
+	private function addons_section_desc(): string {
+		if ( ! function_exists( 'get_field_objects' ) ) {
+			return __( 'Advanced Custom Fields (ACF) was not detected on this site. Product add-ons are inactive until ACF is installed and active — the settings below have no effect.', 'agentmesh-woocommerce' );
+		}
+		return __( 'Expose ACF-defined product options to AI agents as purchasable add-ons. Choices, requirements, and optional price modifiers carry through cart and checkout onto the order.', 'agentmesh-woocommerce' );
+	}
+
+	/**
+	 * The connector-owned Paystack webhook URL the merchant must register in
+	 * their Paystack dashboard. Read-only display only.
+	 */
+	private function get_paystack_webhook_url(): string {
+		$base = function_exists( 'get_rest_url' )
+			? get_rest_url( null, AGENTMESH_REST_NAMESPACE . '/webhooks/paystack' )
+			: trailingslashit( get_site_url() ) . 'wp-json/' . AGENTMESH_REST_NAMESPACE . '/webhooks/paystack';
+		return $base;
+	}
+
+	/**
+	 * Render the Generate + Copy buttons below the Connector Key input.
+	 *
+	 * Generate kicks off an AJAX call to {@see ajax_rotate_key()}, which:
+	 *   1. Mints a new key server-side.
+	 *   2. If the store is already linked (current key + gateway URL + site_id all present),
+	 *      pushes the new key to the gateway authenticated by the OLD key. Only persists
+	 *      locally on a 200 from the gateway — keeps the two sides in sync.
+	 *   3. If not yet linked, just persists locally; the merchant pastes into the dashboard
+	 *      to complete initial setup.
+	 *
+	 * Copy is a pure client-side clipboard helper.
+	 */
+	public function render_key_actions(): void {
+		$gen_label   = esc_html__( 'Generate new key', 'agentmesh-woocommerce' );
+		$copy_label  = esc_html__( 'Copy', 'agentmesh-woocommerce' );
+		$default_msg = __( 'Click "Generate new key" to mint a fresh key. When this store is already linked to Synchronity, it will be pushed to the gateway automatically.', 'agentmesh-woocommerce' );
+		$nonce       = wp_create_nonce( 'agentmesh_rotate_key' );
+		$ajax_url    = esc_url_raw( admin_url( 'admin-ajax.php' ) );
+		?>
+		<tr valign="top">
+			<th scope="row" class="titledesc">&nbsp;</th>
+			<td class="forminp">
+				<button type="button" class="button" id="agentmesh_generate_key"><?php echo $gen_label; ?></button>
+				<button type="button" class="button" id="agentmesh_copy_key"><?php echo $copy_label; ?></button>
+				<p class="description" id="agentmesh_key_feedback"><?php echo esc_html( $default_msg ); ?></p>
+			</td>
+		</tr>
+		<script>
+		(function () {
+			var input   = document.getElementById('agentmesh_connector_key');
+			var gen     = document.getElementById('agentmesh_generate_key');
+			var cpy     = document.getElementById('agentmesh_copy_key');
+			var fb      = document.getElementById('agentmesh_key_feedback');
+			var ajaxUrl = <?php echo wp_json_encode( $ajax_url ); ?>;
+			var nonce   = <?php echo wp_json_encode( $nonce ); ?>;
+			if (!input || !gen || !cpy || !fb) return;
+
+			function setMsg(msg, kind) {
+				fb.textContent = msg;
+				fb.style.color = kind === 'ok' ? '#1e7e34' : (kind === 'warn' ? '#a94442' : '');
+			}
+
+			gen.addEventListener('click', function (e) {
+				e.preventDefault();
+				gen.disabled = true;
+				setMsg(<?php echo wp_json_encode( __( 'Generating…', 'agentmesh-woocommerce' ) ); ?>, '');
+				var body = new URLSearchParams();
+				body.set('action', 'agentmesh_rotate_key');
+				body.set('_wpnonce', nonce);
+				fetch(ajaxUrl, { method: 'POST', credentials: 'same-origin', body: body })
+					.then(function (r) { return r.json().then(function (j) { return { ok: r.ok, status: r.status, json: j }; }); })
+					.then(function (res) {
+						if (res.ok && res.json && res.json.success && res.json.data && res.json.data.new_key) {
+							input.value = res.json.data.new_key;
+							input.type  = 'text'; // reveal so the merchant can verify / copy
+							setMsg(res.json.data.message || 'Key rotated.', 'ok');
+						} else {
+							var msg = (res.json && res.json.data && res.json.data.message) || 'Rotation failed (HTTP ' + res.status + ').';
+							setMsg(msg, 'warn');
+						}
+					})
+					.catch(function (err) {
+						setMsg('Rotation request failed: ' + (err && err.message ? err.message : err), 'warn');
+					})
+					.finally(function () { gen.disabled = false; });
+			});
+
+			cpy.addEventListener('click', function (e) {
+				e.preventDefault();
+				if (!input.value) {
+					setMsg(<?php echo wp_json_encode( __( 'No key to copy. Generate one first.', 'agentmesh-woocommerce' ) ); ?>, 'warn');
+					return;
+				}
+				var done = function () { setMsg(<?php echo wp_json_encode( __( 'Copied to clipboard.', 'agentmesh-woocommerce' ) ); ?>, 'ok'); };
+				var fail = function () { setMsg(<?php echo wp_json_encode( __( 'Copy failed — select the Connector Key field and copy manually.', 'agentmesh-woocommerce' ) ); ?>, 'warn'); };
+				if (navigator.clipboard && navigator.clipboard.writeText) {
+					navigator.clipboard.writeText(input.value).then(done, fail);
+				} else {
+					var prev = input.type; input.type = 'text';
+					input.select();
+					try { document.execCommand('copy') ? done() : fail(); } catch (_) { fail(); }
+					input.type = prev;
+				}
+			});
+		})();
+		</script>
+		<?php
+	}
+
+	/**
+	 * AJAX: rotate the connector key.
+	 *
+	 * Mints a fresh `amck_` + 32-byte hex key. If the store is already linked
+	 * (current key + gateway URL + site_id all configured), posts the new key
+	 * to {GATEWAY_URL}/v1/connector/rotate-key authenticated by the OLD key
+	 * and only persists locally on a 200. Otherwise (initial setup) just
+	 * persists locally and tells the merchant to paste it into the dashboard.
+	 */
+	public function ajax_rotate_key(): void {
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_send_json_error( [ 'message' => __( 'Insufficient permissions.', 'agentmesh-woocommerce' ) ], 403 );
+		}
+		check_ajax_referer( 'agentmesh_rotate_key', '_wpnonce' );
+
+		$new_key     = 'amck_' . bin2hex( random_bytes( 32 ) );
+		$current_key = (string) get_option( 'agentmesh_connector_key', '' );
+		$gateway_url = rtrim( (string) get_option( 'agentmesh_gateway_url', '' ), '/' );
+		$site_id     = (string) get_option( 'agentmesh_site_id', '' );
+
+		$linked = $current_key !== '' && $gateway_url !== '' && $site_id !== '';
+
+		if ( ! $linked ) {
+			update_option( 'agentmesh_connector_key', $new_key );
+			wp_send_json_success( [
+				'new_key' => $new_key,
+				'pushed'  => false,
+				'message' => __( 'New key generated locally. Paste it into the Synchronity dashboard to complete setup.', 'agentmesh-woocommerce' ),
+			] );
+		}
+
+		$response = wp_remote_post( $gateway_url . '/v1/connector/rotate-key', [
+			'headers' => [
+				'Content-Type'              => 'application/json',
+				'Accept'                    => 'application/json',
+				'X-AgentMesh-Connector-Key' => $current_key,
+				'X-Synchronity-Site-Id'     => $site_id,
+			],
+			'body'    => wp_json_encode( [ 'new_key' => $new_key ] ),
+			'timeout' => 10,
+		] );
+
+		if ( is_wp_error( $response ) ) {
+			wp_send_json_error( [
+				'message' => sprintf(
+					/* translators: %s: error message returned by the HTTP client */
+					__( 'Could not reach the Synchronity gateway: %s. The current key is unchanged.', 'agentmesh-woocommerce' ),
+					$response->get_error_message()
+				),
+			], 502 );
+		}
+
+		$code = (int) wp_remote_retrieve_response_code( $response );
+		if ( $code !== 200 ) {
+			wp_send_json_error( [
+				'message' => sprintf(
+					/* translators: %d: HTTP status code from the gateway */
+					__( 'Gateway rejected the rotation (HTTP %d). The current key is unchanged.', 'agentmesh-woocommerce' ),
+					$code
+				),
+				'gateway_body' => wp_remote_retrieve_body( $response ),
+			], $code );
+		}
+
+		// Gateway accepted — persist locally so the two sides stay in sync.
+		update_option( 'agentmesh_connector_key', $new_key );
+		wp_send_json_success( [
+			'new_key' => $new_key,
+			'pushed'  => true,
+			'message' => __( 'Key rotated and pushed to the Synchronity gateway.', 'agentmesh-woocommerce' ),
+		] );
+	}
+}
