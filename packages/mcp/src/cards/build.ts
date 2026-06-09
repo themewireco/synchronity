@@ -1,6 +1,6 @@
 // sdk/mcp/src/cards/build.ts
 import type {
-  CardModel, ProductCardModel, CartCardModel, CheckoutCardModel, DelegationCardModel, CartLine, ProductListCardModel, ProductCardAddon,
+  CardModel, ProductCardModel, CartCardModel, CheckoutCardModel, DelegationCardModel, CartLine, ProductListCardModel, ProductCardAddon, ProductCardVariant,
 } from './types.js';
 
 function money(m?: { amount: string; currency: string }): string {
@@ -28,6 +28,21 @@ function buildAddons(raw: any): ProductCardAddon[] | undefined {
   }));
 }
 
+/** Summarise selected addons on a cart item as "Label: value, value2" lines. */
+function addonsSummary(raw: any): string | undefined {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  const parts = raw
+    .map((a: any) => {
+      const label = a.label ?? a.name ?? a.addon_id ?? '';
+      const val = Array.isArray(a.values)
+        ? a.values.map((v: any) => v?.label ?? v?.value ?? v).join(', ')
+        : a.value_label ?? a.value ?? '';
+      return label && val ? `${label}: ${val}` : label || String(val);
+    })
+    .filter(Boolean);
+  return parts.length ? parts.join(' · ') : undefined;
+}
+
 function lines(cart: any, siteId: string): CartLine[] {
   return (cart.items ?? []).map((it: any) => ({
     itemId: it.item_id,
@@ -35,6 +50,9 @@ function lines(cart: any, siteId: string): CartLine[] {
     qty: it.quantity,
     unitPrice: money(it.unit_price),
     lineTotal: money(it.line_total),
+    image: it.image_url ?? it.image ?? undefined,
+    variantTitle: it.variant_title ?? undefined,
+    addonsSummary: addonsSummary(it.addons),
     removeAction: {
       label: 'Remove',
       toolName: 'remove_from_cart',
@@ -43,23 +61,64 @@ function lines(cart: any, siteId: string): CartLine[] {
   }));
 }
 
+/** Strip HTML to a short plain-text snippet for the card (avoids dumping full product
+ *  descriptions — allergen lists, sizing tables, broken inline images — into the View). */
+function shortDescription(raw?: string): string | undefined {
+  if (!raw) return undefined;
+  const text = String(raw)
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&[a-z]+;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!text) return undefined;
+  return text.length > 200 ? `${text.slice(0, 200).trimEnd()}…` : text;
+}
+
+/** Collect product image URLs (AMPS `images[].url` or single `image_url`), de-duped, first = primary. */
+function productImages(p: any): string[] {
+  const urls = Array.isArray(p.images)
+    ? p.images.map((i: any) => (typeof i === 'string' ? i : i?.url)).filter(Boolean)
+    : [];
+  if (p.image_url && !urls.includes(p.image_url)) urls.unshift(p.image_url);
+  return [...new Set(urls)] as string[];
+}
+
 export function buildProductCard(p: any, siteId: string, cartId?: string): ProductCardModel {
   // add_to_cart requires cart_id. During browse no cart exists yet, so cart_id is
   // included only when a cart context is known; otherwise the host must create a
   // cart (create_cart) and merge cart_id into the action params (see CARDS.md).
+  const images = productImages(p);
   return {
     kind: 'product',
     siteId,
     productId: p.product_id,
     title: p.title,
+    description: shortDescription(p.short_description ?? p.description),
     price: money(p.price),
-    image: p.image_url ?? p.images?.[0]?.url ?? undefined,
+    image: images[0],
+    images: images.length > 0 ? images : undefined,
     url: p.url ?? undefined,
     inStock: p.availability === 'in_stock',
     addons: buildAddons(p.addons),
+    variants: buildVariants(p.variants),
     addToCart: { label: 'Add to cart', toolName: 'add_to_cart',
       params: { site_id: siteId, product_id: p.product_id, quantity: 1, ...(cartId ? { cart_id: cartId } : {}) } },
   };
+}
+
+/** Map AMPS product variants into the lean card variant shape (undefined when none). */
+function buildVariants(raw: any): ProductCardVariant[] | undefined {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  return raw.map((v: any) => ({
+    variantId: v.variant_id,
+    title: v.title,
+    price: money(v.price),
+    image: v.image_url ?? undefined,
+    inStock: v.availability ? v.availability === 'in_stock' : true,
+    attributes: Array.isArray(v.attributes)
+      ? v.attributes.map((a: any) => ({ name: a.name ?? a.key ?? '', value: a.value ?? '' }))
+      : undefined,
+  }));
 }
 
 export function buildCartCard(cart: any, siteId: string): CartCardModel {

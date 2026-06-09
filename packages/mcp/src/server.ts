@@ -7,13 +7,19 @@
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import {
+  CallToolRequestSchema,
+  ListToolsRequestSchema,
+  ListResourcesRequestSchema,
+  ReadResourceRequestSchema,
+} from '@modelcontextprotocol/sdk/types.js';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { Synchronity } from '@synchronity/sdk';
 import { getConfig } from './config.js';
 import { getToolImplementation } from './tools.js';
 import type { MCPContent } from './types.js';
 import type { CardToolResult } from './cards/types.js';
+import { listUiResources, readUiResource } from './cards/resources.js';
 
 /**
  * Tool definitions as per MCP spec
@@ -32,8 +38,9 @@ const TOOL_DEFINITIONS: Tool[] = [
   {
     name: 'search_products',
     annotations: { title: 'Search products', readOnlyHint: true, destructiveHint: false },
+    _meta: { ui: { resourceUri: 'ui://synchronity/product-list' } },
     description:
-      'Search for products on a registered e-commerce site by query, category, price range, or availability. Returns paginated product listings.',
+      'Search for products on a registered e-commerce site by query, category, price range, or availability. Returns paginated product listings as an interactive card. IMPORTANT: call this ONCE with your single best query and present the returned card to the user — do NOT fire multiple back-to-back searches with reworded queries. If the first search is empty or off-target, ask the user to clarify rather than guessing repeatedly; each call renders its own card, so repeated calls clutter the conversation. The card already shows the products with prices, IDs, and Add-to-cart controls, so keep your text reply to one brief sentence — do NOT re-list the products, prices, or IDs the card already displays.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -63,7 +70,8 @@ const TOOL_DEFINITIONS: Tool[] = [
   {
     name: 'get_product',
     annotations: { title: 'Get product details', readOnlyHint: true, destructiveHint: false },
-    description: 'Retrieve detailed information about a specific product including variants, pricing, images, and availability. May also return `addons` — customer-selectable options defined by the store (e.g. engraving, gift wrap, size add-ons). When a product has addons, present them to the buyer and collect every addon with `required: true` before calling add_to_cart; for any option carrying a `price_modifier`, show that surcharge so the buyer knows the added cost.',
+    _meta: { ui: { resourceUri: 'ui://synchronity/product' } },
+    description: 'Retrieve detailed information about a specific product including variants, pricing, images, and availability. May also return `addons` — customer-selectable options defined by the store (e.g. engraving, gift wrap, size add-ons). When a product has addons, present them to the buyer and collect every addon with `required: true` before calling add_to_cart; for any option carrying a `price_modifier`, show that surcharge so the buyer knows the added cost. The card already shows the product details to the user, so keep your text reply brief and do not re-describe what the card displays.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -111,7 +119,7 @@ const TOOL_DEFINITIONS: Tool[] = [
     name: 'create_cart',
     annotations: { title: 'Create cart', readOnlyHint: false, destructiveHint: false },
     description:
-      'Create a new shopping cart for a specific site. Cart must be created before adding items. Returns a cart_id for use in subsequent operations.',
+      'Create a new shopping cart for a specific site. Returns a cart_id. IMPORTANT: Reuse the active cart_id across multiple products in the same session. Do NOT call create_cart again if you already have a cart_id for this site in the chat history.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -124,12 +132,13 @@ const TOOL_DEFINITIONS: Tool[] = [
   {
     name: 'add_to_cart',
     annotations: { title: 'Add item to cart', readOnlyHint: false, destructiveHint: false },
-    description: 'Add a product variant (or base product) to an existing cart. Quantity must be positive.',
+    _meta: { ui: { resourceUri: 'ui://synchronity/cart' } },
+    description: 'Add a product variant (or base product) to an existing cart. Reuse the active cart_id from the chat history if one already exists. Only call create_cart first if no cart exists yet.',
     inputSchema: {
       type: 'object',
       properties: {
         site_id: { type: 'string', description: 'Registered site ID' },
-        cart_id: { type: 'string', description: 'Cart ID from create_cart' },
+        cart_id: { type: 'string', description: 'Cart ID to add the product to' },
         product_id: { type: 'string', description: 'Product ID to add' },
         quantity: { type: 'integer', description: 'Quantity to add (must be >= 1)' },
         variant_id: { type: 'string', description: 'Optional product variant ID (e.g., for size/color selection)' },
@@ -144,6 +153,7 @@ const TOOL_DEFINITIONS: Tool[] = [
   {
     name: 'remove_from_cart',
     annotations: { title: 'Remove item from cart', readOnlyHint: false, destructiveHint: false },
+    _meta: { ui: { resourceUri: 'ui://synchronity/cart' } },
     description: 'Remove a line item from the cart. Requires the item_id from the cart contents.',
     inputSchema: {
       type: 'object',
@@ -172,14 +182,15 @@ const TOOL_DEFINITIONS: Tool[] = [
   {
     name: 'get_cart',
     annotations: { title: 'View cart', readOnlyHint: true, destructiveHint: false },
-    description: 'Retrieve current cart contents, including items, pricing, discounts, and totals.',
+    _meta: { ui: { resourceUri: 'ui://synchronity/cart' } },
+    description: 'Retrieve current cart contents, including items, pricing, discounts, and totals. The card already shows the line items and totals to the user, so keep your text reply to one brief sentence — do not re-list the cart contents.',
     inputSchema: {
       type: 'object',
       properties: {
         site_id: { type: 'string', description: 'Registered site ID' },
-        cart_id: { type: 'string', description: 'Cart ID' },
+        cart_id: { type: 'string', description: 'Cart ID (optional if an active cart exists for the site)' },
       },
-      required: ['site_id', 'cart_id'],
+      required: ['site_id'],
     },
   },
   {
@@ -344,7 +355,7 @@ const TOOL_DEFINITIONS: Tool[] = [
     name: 'initiate_payment',
     annotations: { title: 'Start payment', readOnlyHint: false, destructiveHint: true },
     description:
-      'STEP 2 of the in-chat payment flow. Starts a payment session for an order and returns a PaymentSession with an `instruction` the agent renders in chat. REQUIRES a buyer_delegation_token — obtain it exactly like execute_checkout: call request_delegation, have the user approve in chat, then check_delegation to get the token (spending money always needs human approval). For channel "mobile_money" you MUST collect the buyer\'s `phone` and `provider` (mtn|vod|tgo). For channel "card", no phone/provider is needed; the response instruction contains an `authorization_url` you send the user to. After calling: if instruction.action == "submit_otp", ask the user for the OTP and call submit_payment_otp. If instruction.action == "approve_on_phone", tell the user to approve the prompt on their phone, then poll get_payment_status. If instruction.action == "redirect" (card), send the user the authorization_url, then poll get_payment_status.',
+      'STEP 2 of the in-chat payment flow. Starts a payment session for an order and returns a PaymentSession with an `instruction` the agent renders in chat. REQUIRES a buyer_delegation_token — obtain it exactly like execute_checkout: call request_delegation, have the user approve in chat, then check_delegation to get the token (spending money always needs human approval). For channel "mobile_money" you MUST collect the buyer\'s `phone` (Ghana: 055… or +233…) and `provider` — use codes mtn, vod (Vodafone/Telecel), or tgo (AirtelTigo); aliases telecel→vod, tigo→tgo are accepted. ALWAYS quote the **Show this instruction to the buyer** line from the response verbatim (Paystack display_text). For channel "card", no phone/provider is needed; the response instruction contains an `authorization_url` you send the user to. After calling: if instruction.action == "submit_otp", ask the user for the OTP and call submit_payment_otp. If instruction.action == "approve_on_phone", tell the user to approve the prompt on their phone, then poll get_payment_status. If instruction.action == "redirect" (card), send the user the authorization_url, then poll get_payment_status.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -358,8 +369,9 @@ const TOOL_DEFINITIONS: Tool[] = [
         phone: { type: 'string', description: 'Buyer mobile-money phone number (required for channel "mobile_money")' },
         provider: {
           type: 'string',
-          enum: ['mtn', 'vod', 'tgo'],
-          description: 'Mobile-money provider (required for channel "mobile_money")',
+          enum: ['mtn', 'vod', 'tgo', 'telecel', 'vodafone', 'tigo', 'airteltigo'],
+          description:
+            'Mobile-money provider (required for channel "mobile_money"). Codes: mtn, vod (Vodafone/Telecel), tgo (AirtelTigo).',
         },
         buyer_delegation_token: {
           type: 'string',
@@ -493,13 +505,27 @@ export function createMCPServer(config: {
   const runtime = { ait: config.ait, gatewayUrl: config.gatewayUrl, debug: config.debug };
 
   const server = new Server(
-    { name: 'synchronity-mcp', version: '0.1.0' },
-    { capabilities: { tools: {} } },
+    { name: 'synchronity-mcp', version: '0.2.0' },
+    { capabilities: { tools: {}, resources: {} } },
   );
 
   server.setRequestHandler(ListToolsRequestSchema, () => ({
     tools: TOOL_DEFINITIONS,
   }));
+
+  // MCP Apps UI resources (product / product-list Views). Hosts that support MCP
+  // Apps fetch these and render the interactive card; others use the Markdown text.
+  server.setRequestHandler(ListResourcesRequestSchema, () => ({
+    resources: listUiResources(),
+  }));
+
+  server.setRequestHandler(ReadResourceRequestSchema, (request) => {
+    const result = readUiResource(request.params.uri);
+    if (!result) {
+      throw new Error(`Unknown resource: ${request.params.uri}`);
+    }
+    return result;
+  });
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const toolName = request.params.name;

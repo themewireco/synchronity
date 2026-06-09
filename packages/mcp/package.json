@@ -28,9 +28,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@synchronity/sdk": "file:../sdk",
-    "zod": "^3.24.0"
+    "zod": "^3.24.0",
+    "@modelcontextprotocol/ext-apps": "^1.7.4"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",

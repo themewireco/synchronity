@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "..",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false
+  },
+  "include": ["./**/*.ts", "../__tests__/ui.render.test.ts", "../__tests__/ui.hitl.test.ts"],
+  "exclude": ["../../node_modules", "../../dist"]
+}
