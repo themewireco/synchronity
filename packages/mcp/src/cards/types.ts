@@ -20,16 +20,30 @@ export interface ProductCardAddon {
   help?: string;
 }
 
+/** A selectable product variant (size/colour/etc) for the options wizard. */
+export interface ProductCardVariant {
+  variantId: string;
+  title: string;
+  price: string;
+  image?: string;
+  inStock: boolean;
+  /** Human-readable attribute pairs, e.g. [{name:'Size',value:'M'}]. */
+  attributes?: Array<{ name: string; value: string }>;
+}
+
 export interface ProductCardModel {
   kind: 'product';
   siteId: string;
   productId: string;
   title: string;
+  description?: string;
   price: string;
-  image?: string;
+  image?: string;       // first/primary image (markdown fallback uses this)
+  images?: string[];    // all images; View renders a carousel when length > 1
   url?: string;
   inStock: boolean;
   addons?: ProductCardAddon[];
+  variants?: ProductCardVariant[]; // present → options wizard offers a variant step
   addToCart: CardAction;
 }
 
@@ -55,6 +69,9 @@ export interface CartLine {
   qty: number;
   unitPrice: string;
   lineTotal: string;
+  image?: string;          // product thumbnail (needs cart-item image_url from backend)
+  variantTitle?: string;   // selected variant label, when applicable
+  addonsSummary?: string;  // human-readable selected-addons summary, e.g. "Engraving: Gold"
   removeAction?: CardAction;
 }
 

@@ -72,6 +72,54 @@ class AgentMesh_Paystack_Provider implements AgentMesh_Payment_Provider {
 	/** Mobile money providers supported in v1 (Ghana). */
 	const MOBILE_MONEY_PROVIDERS = [ 'mtn', 'vod', 'tgo' ];
 
+	/** Human-facing labels for provider picker / agent copy. */
+	const MOBILE_MONEY_PROVIDER_LABELS = [
+		'mtn' => 'MTN',
+		'vod' => 'Vodafone / Telecel',
+		'tgo' => 'AirtelTigo',
+	];
+
+	/** Synonyms accepted from agents or buyers (mapped to canonical codes). */
+	const MOBILE_MONEY_PROVIDER_ALIASES = [
+		'mtn'        => 'mtn',
+		'vod'        => 'vod',
+		'vodafone'   => 'vod',
+		'telecel'    => 'vod',
+		'tgo'        => 'tgo',
+		'tigo'       => 'tgo',
+		'airtel'     => 'tgo',
+		'airteltigo' => 'tgo',
+		'at'         => 'tgo',
+	];
+
+	// ─────────────────────────────────────────────────────────────────
+	// Mobile-money input normalisation (Ghana)
+	// ─────────────────────────────────────────────────────────────────
+
+	/**
+	 * Map buyer-facing provider names to Paystack codes (mtn|vod|tgo).
+	 * Returns '' when the input is not recognised.
+	 */
+	public static function normalize_mobile_money_provider( string $provider ): string {
+		$key = strtolower( trim( sanitize_text_field( $provider ) ) );
+		return self::MOBILE_MONEY_PROVIDER_ALIASES[ $key ] ?? '';
+	}
+
+	/**
+	 * Normalise a Ghana mobile-money MSISDN for Paystack.
+	 * Converts +233 / 233… to leading-0 local form (e.g. 0551234567).
+	 */
+	public static function normalize_ghana_phone( string $phone ): string {
+		$digits = preg_replace( '/\D/', '', $phone ) ?? '';
+		if ( str_starts_with( $digits, '233' ) && strlen( $digits ) >= 12 ) {
+			$digits = '0' . substr( $digits, 3 );
+		}
+		if ( 9 === strlen( $digits ) && ! str_starts_with( $digits, '0' ) ) {
+			$digits = '0' . $digits;
+		}
+		return $digits;
+	}
+
 	// ─────────────────────────────────────────────────────────────────
 	// Key reading (centralised)
 	// ─────────────────────────────────────────────────────────────────
@@ -142,10 +190,16 @@ class AgentMesh_Paystack_Provider implements AgentMesh_Payment_Provider {
 			$methods[] = 'card';
 		}
 
+		$labels = [];
+		foreach ( self::MOBILE_MONEY_PROVIDERS as $code ) {
+			$labels[ $code ] = self::MOBILE_MONEY_PROVIDER_LABELS[ $code ] ?? $code;
+		}
+
 		return [
-			'methods'                => $methods,
-			'currency'               => $currency,
-			'mobile_money_providers' => in_array( 'mobile_money', $methods, true ) ? self::MOBILE_MONEY_PROVIDERS : [],
+			'methods'                       => $methods,
+			'currency'                      => $currency,
+			'mobile_money_providers'        => in_array( 'mobile_money', $methods, true ) ? self::MOBILE_MONEY_PROVIDERS : [],
+			'mobile_money_provider_labels'  => in_array( 'mobile_money', $methods, true ) ? $labels : [],
 		];
 	}
 
@@ -195,14 +249,23 @@ class AgentMesh_Paystack_Provider implements AgentMesh_Payment_Provider {
 		}
 
 		if ( 'mobile_money' === $channel ) {
-			$phone    = preg_replace( '/[^0-9+]/', '', (string) ( $args['phone'] ?? '' ) );
-			$provider = strtolower( sanitize_text_field( (string) ( $args['provider'] ?? '' ) ) );
+			$phone    = self::normalize_ghana_phone( (string) ( $args['phone'] ?? '' ) );
+			$provider = self::normalize_mobile_money_provider( (string) ( $args['provider'] ?? '' ) );
 
 			if ( empty( $phone ) ) {
 				return $this->fail_session( $order, $reference, $channel, 'phone is required for mobile money.' );
 			}
+			if ( 'GHS' === $currency && ( 10 !== strlen( $phone ) || '0' !== $phone[0] ) ) {
+				return $this->fail_session( $order, $reference, $channel, 'Phone must be a 10-digit Ghana mobile number (e.g. 0551234567 or +233551234567).' );
+			}
 			if ( ! in_array( $provider, self::MOBILE_MONEY_PROVIDERS, true ) ) {
-				return $this->fail_session( $order, $reference, $channel, 'provider must be one of: ' . implode( ', ', self::MOBILE_MONEY_PROVIDERS ) . '.' );
+				return $this->fail_session(
+					$order,
+					$reference,
+					$channel,
+					'provider must be one of: ' . implode( ', ', self::MOBILE_MONEY_PROVIDERS )
+					. ' (aliases: telecel/vodafone → vod, airteltigo/tigo → tgo).'
+				);
 			}
 
 			$resp = $this->api_post( '/charge', [
@@ -213,6 +276,12 @@ class AgentMesh_Paystack_Provider implements AgentMesh_Payment_Provider {
 				'mobile_money' => [ 'phone' => $phone, 'provider' => $provider ],
 			] );
 
+			$this->log_paystack_response( 'charge', $reference, $resp, [
+				'order_id' => $order->get_id(),
+				'provider' => $provider,
+				'phone'    => $phone,
+			] );
+
 			if ( is_wp_error( $resp ) ) {
 				return $this->fail_session( $order, $reference, $channel, $resp->get_error_message() );
 			}
@@ -220,6 +289,9 @@ class AgentMesh_Paystack_Provider implements AgentMesh_Payment_Provider {
 			$data = $resp['data'] ?? [];
 			$ref  = $data['reference'] ?? $reference;
 			$this->store_reference( $order, $ref, $channel, $data['id'] ?? null );
+			$order->update_meta_data( '_agentmesh_payment_phone', $phone );
+			$order->update_meta_data( '_agentmesh_payment_provider', $provider );
+			$order->save();
 
 			return $this->map_charge_response( $order, $ref, $channel, $provider, $phone, $data );
 		}
@@ -240,6 +312,11 @@ class AgentMesh_Paystack_Provider implements AgentMesh_Payment_Provider {
 		$resp = $this->api_post( '/charge/submit_otp', [
 			'reference' => $reference,
 			'otp'       => $otp,
+		] );
+
+		$this->log_paystack_response( 'submit_otp', $reference, $resp, [
+			'order_id' => $order->get_id(),
+			'provider' => $provider,
 		] );
 
 		if ( is_wp_error( $resp ) ) {
@@ -269,8 +346,12 @@ class AgentMesh_Paystack_Provider implements AgentMesh_Payment_Provider {
 
 		$status = match ( $ps_status ) {
 			'success'             => 'success',
-			'failed', 'abandoned' => 'failed',
-			'pending', 'ongoing', 'processing', 'send_otp', 'pay_offline' => 'pending',
+			'failed'              => 'failed',
+			// 'abandoned' = initialised but not completed — i.e. the buyer is still
+			// in the awaiting-user window (entering the OTP, or on the card redirect
+			// page). It is NOT terminal; treating it as failed bricks a payment that
+			// is still in progress. A genuine decline returns Paystack 'failed'.
+			'abandoned', 'pending', 'ongoing', 'processing', 'send_otp', 'pay_offline' => 'pending',
 			default               => 'unknown',
 		};
 
@@ -368,6 +449,45 @@ class AgentMesh_Paystack_Provider implements AgentMesh_Payment_Provider {
 					'message'        => 'Awaiting confirmation…',
 				] );
 		}
+	}
+
+	/**
+	 * Support logging for Paystack charge flows. Never logs OTPs or card data.
+	 *
+	 * @param string       $operation charge|submit_otp
+	 * @param string       $reference Paystack reference
+	 * @param array|WP_Error $resp    Decoded Paystack body or transport error
+	 * @param array<string, mixed> $context Safe contextual fields (order_id, provider, phone)
+	 */
+	private function log_paystack_response( string $operation, string $reference, $resp, array $context = [] ): void {
+		if ( is_wp_error( $resp ) ) {
+			error_log(
+				sprintf(
+					'[AgentMesh Paystack] %s ref=%s %s',
+					$operation,
+					$reference,
+					wp_json_encode( array_merge( $context, [ 'error' => $resp->get_error_message() ] ) )
+				)
+			);
+			return;
+		}
+
+		$data = is_array( $resp ) ? ( $resp['data'] ?? [] ) : [];
+		$safe = [
+			'paystack_status'    => $data['status'] ?? null,
+			'gateway_response'   => $data['gateway_response'] ?? null,
+			'display_text'       => $data['display_text'] ?? null,
+			'paystack_message'   => is_array( $resp ) ? ( $resp['message'] ?? null ) : null,
+		];
+
+		error_log(
+			sprintf(
+				'[AgentMesh Paystack] %s ref=%s %s',
+				$operation,
+				$reference,
+				wp_json_encode( array_merge( $context, $safe ) )
+			)
+		);
 	}
 
 	private function fail_session( WC_Order $order, string $reference, string $channel, string $message ): array {
@@ -565,10 +685,18 @@ class AgentMesh_Payments {
 			return AgentMesh_Auth::echo_request_id( $request, $err );
 		}
 
-		// Amount is server-derived; only a pending order may be charged.
-		if ( 'pending' !== $order->get_status() ) {
+		// Amount is server-derived. A pending order can be charged; a failed order is a
+		// retry — WooCommerce treats both as payable, so a single declined charge must
+		// not permanently brick checkout. Reset a failed order to pending for a clean
+		// attempt (this also un-sticks status()/submit-otp, which short-circuit on failed).
+		$order_status = $order->get_status();
+		if ( 'failed' === $order_status ) {
+			$order->delete_meta_data( '_agentmesh_payment_failed_at' );
+			$order->set_status( 'pending', 'Retrying payment after a previous failure.' );
+			$order->save();
+		} elseif ( 'pending' !== $order_status ) {
 			$r = new WP_REST_Response(
-				AgentMesh_Auth::error_response( 'INVALID_REQUEST', 'Order is not awaiting payment (status: ' . $order->get_status() . ').' ),
+				AgentMesh_Auth::error_response( 'INVALID_REQUEST', 'Order is not awaiting payment (status: ' . $order_status . ').' ),
 				409
 			);
 			return AgentMesh_Auth::echo_request_id( $request, $r );
@@ -583,15 +711,12 @@ class AgentMesh_Payments {
 			return AgentMesh_Auth::echo_request_id( $request, $r );
 		}
 
-		$phone    = sanitize_text_field( (string) ( $request->get_param( 'phone' ) ?: '' ) );
-		$provider = sanitize_text_field( (string) ( $request->get_param( 'provider' ) ?: '' ) );
-
-		// Remember mobile money context for the OTP step (no PAN/OTP stored).
-		if ( 'mobile_money' === $channel ) {
-			$order->update_meta_data( '_agentmesh_payment_phone', $phone );
-			$order->update_meta_data( '_agentmesh_payment_provider', strtolower( $provider ) );
-			$order->save();
-		}
+		$phone    = AgentMesh_Paystack_Provider::normalize_ghana_phone(
+			sanitize_text_field( (string) ( $request->get_param( 'phone' ) ?: '' ) )
+		);
+		$provider = AgentMesh_Paystack_Provider::normalize_mobile_money_provider(
+			sanitize_text_field( (string) ( $request->get_param( 'provider' ) ?: '' ) )
+		);
 
 		$session = $this->provider->initiate( $order, $channel, [ 'phone' => $phone, 'provider' => $provider ] );
 

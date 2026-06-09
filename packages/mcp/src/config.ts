@@ -8,7 +8,7 @@ import { join } from 'path';
 
 export interface MCPServerConfig {
   /**
-   * Synchronity Gateway URL (e.g., "https://api.synchronity.app")
+   * Synchronity Gateway URL (e.g., "https://api.agentmesh.com")
    * Defaults to GATEWAY_URL environment variable
    */
   gatewayUrl?: string;
@@ -49,11 +49,11 @@ interface CachedTokenData {
   expiresAt: number;
 }
 
-const TOKEN_DIR = join(homedir(), '.synchronity');
+const TOKEN_DIR = join(homedir(), '.agentmesh');
 const TOKEN_FILE = join(TOKEN_DIR, 'token');
 
 /**
- * Read cached token from ~/.synchronity/token
+ * Read cached token from ~/.agentmesh/token
  * Returns null if token doesn't exist, is corrupted, or is expired
  */
 function readCachedToken(): string | null {
@@ -80,7 +80,7 @@ function readCachedToken(): string | null {
 }
 
 /**
- * Save token to ~/.synchronity/token with expiry metadata
+ * Save token to ~/.agentmesh/token with expiry metadata
  */
 function saveCachedToken(token: string, expiresInMs: number = 86400000): void {
   try {
@@ -184,7 +184,7 @@ async function autoRegister(gatewayUrl: string): Promise<string> {
  * 4. Fall back to auto-register
  */
 export async function getConfig(overrides?: Partial<MCPServerConfig>): Promise<MCPServerConfig> {
-  const gatewayUrl = (process.env.GATEWAY_URL || 'https://api.synchronity.app').replace(/\/$/, '');
+  const gatewayUrl = (process.env.GATEWAY_URL || 'http://localhost:3000').replace(/\/$/, '');
   
   let ait = process.env.AIT;
 

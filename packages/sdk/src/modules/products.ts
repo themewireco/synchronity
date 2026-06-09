@@ -75,6 +75,6 @@ export class ProductsModule {
       body.filters = filters;
     }
 
-    return this.http.post<CompareProductsResponse>('/v1/multi/products/compare', body);
+    return this.http.post<CompareProductsResponse>('/v1/products/compare', body);
   }
 }
