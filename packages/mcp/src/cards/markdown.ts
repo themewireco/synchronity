@@ -63,7 +63,7 @@ function productList(m: ProductListCardModel): string {
     return lines.join('\n');
   });
   return [
-    `**${m.products.length} product${m.products.length === 1 ? '' : 's'}** on site \`${m.siteId}\``,
+    `**${m.products.length} product${m.products.length === 1 ? '' : 's'}**${m.siteName ? ` at ${m.siteName}` : ''}`,
     '',
     blocks.join('\n\n'),
     '',

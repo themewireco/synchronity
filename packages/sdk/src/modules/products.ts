@@ -62,18 +62,15 @@ export class ProductsModule {
     siteIds: string[],
     query: SearchProductsParams,
   ): Promise<{ results: Array<{ site_id: string; products: AMPSProduct[] }> }> {
-    const filters: CompareProductsRequest['filters'] = {};
-    if (query.min_price !== undefined) filters.min_price = query.min_price;
-    if (query.max_price !== undefined) filters.max_price = query.max_price;
-    if (query.in_stock !== undefined) filters.in_stock = query.in_stock;
+    // The gateway's CompareBodySchema expects { site_ids, query: { q, category,
+    // max_price, in_stock } } — query is an object, not a string + filters.
+    const q: CompareProductsRequest['query'] = {};
+    if (query.q !== undefined) q.q = query.q;
+    if (query.category !== undefined) q.category = query.category;
+    if (query.max_price !== undefined) q.max_price = query.max_price;
+    if (query.in_stock !== undefined) q.in_stock = query.in_stock;
 
-    const body: CompareProductsRequest = {
-      query: query.q ?? '',
-      site_ids: siteIds,
-    };
-    if (Object.keys(filters).length > 0) {
-      body.filters = filters;
-    }
+    const body: CompareProductsRequest = { site_ids: siteIds, query: q };
 
     return this.http.post<CompareProductsResponse>('/v1/products/compare', body);
   }

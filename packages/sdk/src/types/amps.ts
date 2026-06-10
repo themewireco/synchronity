@@ -345,14 +345,13 @@ export interface PaginatedOrderResponse {
 }
 
 export interface CompareProductsRequest {
-  query: string;
-  site_ids?: string[];
-  max_results_per_site?: number;
-  filters?: {
-    min_price?: number;
+  site_ids: string[];
+  // The gateway expects `query` as an object, not a bare string.
+  query: {
+    q?: string;
+    category?: string;
     max_price?: number;
     in_stock?: boolean;
-    currency?: string;
   };
 }
 

@@ -160,10 +160,11 @@ export function buildDelegationCard(d: any): DelegationCardModel {
   };
 }
 
-export function buildProductListCard(products: any[], siteId: string): ProductListCardModel {
+export function buildProductListCard(products: any[], siteId: string, siteName?: string): ProductListCardModel {
   return {
     kind: 'productList',
     siteId,
+    siteName,
     products: (products ?? []).map((p) => ({
       productId: p.product_id,
       title: p.title,
