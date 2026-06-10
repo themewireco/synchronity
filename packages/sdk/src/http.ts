@@ -20,9 +20,10 @@ export class HttpClient {
   async get<T>(
     path: string,
     params?: Record<string, string | number | boolean | string[]>,
+    extraHeaders?: Record<string, string>,
   ): Promise<T> {
     const url = this.buildUrl(path, params);
-    return this.request<T>('GET', url, undefined);
+    return this.request<T>('GET', url, undefined, 0, extraHeaders);
   }
 
   async post<T>(path: string, body?: unknown): Promise<T> {
@@ -67,6 +68,7 @@ export class HttpClient {
     url: string,
     body: unknown,
     attempt = 0,
+    extraHeaders?: Record<string, string>,
   ): Promise<T> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.config.timeout);
@@ -79,6 +81,10 @@ export class HttpClient {
 
     if (body !== undefined) {
       headers['Content-Type'] = 'application/json';
+    }
+
+    if (extraHeaders) {
+      for (const [k, v] of Object.entries(extraHeaders)) headers[k] = v;
     }
 
     let response: any;
@@ -164,7 +170,7 @@ export class HttpClient {
       this.config.onRetry?.(attempt + 1, error);
 
       await sleep(delay);
-      return this.request<T>(method, url, body, attempt + 1);
+      return this.request<T>(method, url, body, attempt + 1, extraHeaders);
     }
 
     throw parseErrorResponse(response.status, errorBody, this.lastRequestId, retryAfterSeconds);

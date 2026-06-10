@@ -264,12 +264,13 @@ const TOOL_DEFINITIONS: Tool[] = [
   {
     name: 'get_order',
     annotations: { title: 'Get order details', readOnlyHint: true, destructiveHint: false },
-    description: 'Retrieve details for an order by its ID, including items, status, shipping, and tracking information. If checking if an order is paid: a status of \'pending\' or \'pending_payment\' means the order has NOT been paid. Do NOT assume that the vendor storefront has synchronization delays or database lag; treat \'pending\' as unpaid. When an order is unpaid, offer to collect payment in the chat by starting the in-chat payment flow (get_payment_methods → initiate_payment → get_payment_status) rather than only pointing the user at the payment_url. Do not mark the purchase task as successful until the status updates to \'processing\' or \'completed\'.',
+    description: 'Retrieve details for an order by its ID, including items, status, shipping, and tracking information. Orders are buyer-private — pass `buyer_delegation_token` (the delegation token from this buyer\'s checkout approval) so the gateway can confirm the buyer owns this order. If checking if an order is paid: a status of \'pending\' or \'pending_payment\' means the order has NOT been paid. Do NOT assume that the vendor storefront has synchronization delays or database lag; treat \'pending\' as unpaid. When an order is unpaid, offer to collect payment in the chat by starting the in-chat payment flow (get_payment_methods → initiate_payment → get_payment_status) rather than only pointing the user at the payment_url. Do not mark the purchase task as successful until the status updates to \'processing\' or \'completed\'.',
     inputSchema: {
       type: 'object',
       properties: {
         site_id: { type: 'string', description: 'Registered site ID' },
         order_id: { type: 'string', description: 'Order ID' },
+        buyer_delegation_token: { type: 'string', description: 'The buyer\'s delegation token (from their checkout approval); required to read their order.' },
       },
       required: ['site_id', 'order_id'],
     },
@@ -277,7 +278,7 @@ const TOOL_DEFINITIONS: Tool[] = [
   {
     name: 'list_orders',
     annotations: { title: 'List orders', readOnlyHint: true, destructiveHint: false },
-    description: 'List recent orders for a site, optionally filtered by status (pending, processing, completed, cancelled, refunded).',
+    description: 'List recent orders for a site, optionally filtered by status (pending, processing, completed, cancelled, refunded). Orders are buyer-private — pass `buyer_delegation_token` (from this buyer\'s checkout approval); only that buyer\'s orders are returned.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -289,6 +290,7 @@ const TOOL_DEFINITIONS: Tool[] = [
         },
         page: { type: 'integer', description: 'Page number (1-indexed, default: 1)' },
         per_page: { type: 'integer', description: 'Results per page (max 100, default: 20)' },
+        buyer_delegation_token: { type: 'string', description: 'The buyer\'s delegation token (from their checkout approval); required to list their orders.' },
       },
       required: ['site_id'],
     },

@@ -10,13 +10,19 @@ export interface ListOrdersParams {
 export class OrdersModule {
   constructor(private readonly http: HttpClient) {}
 
-  async get(siteId: string, orderId: string): Promise<AMPSOrder> {
-    return this.http.get<AMPSOrder>(`/v1/sites/${siteId}/orders/${orderId}`);
+  async get(siteId: string, orderId: string, delegationToken?: string): Promise<AMPSOrder> {
+    // Orders are buyer-private: the gateway binds reads to the buyer's identity.
+    // Pass the buyer's delegation token so the agent can read its own order.
+    const path = `/v1/sites/${siteId}/orders/${orderId}`;
+    return delegationToken
+      ? this.http.get<AMPSOrder>(path, undefined, { 'X-Buyer-Delegation-Token': delegationToken })
+      : this.http.get<AMPSOrder>(path);
   }
 
   async list(
     siteId: string,
     params?: ListOrdersParams,
+    delegationToken?: string,
   ): Promise<{ orders: AMPSOrder[]; total: number }> {
     const query: Record<string, string | number | boolean> = {};
 
@@ -24,10 +30,10 @@ export class OrdersModule {
     if (params?.limit !== undefined) query['limit'] = params.limit;
     if (params?.status !== undefined) query['status'] = params.status;
 
-    const response = await this.http.get<PaginatedOrderResponse>(
-      `/v1/sites/${siteId}/orders`,
-      query,
-    );
+    const path = `/v1/sites/${siteId}/orders`;
+    const response = delegationToken
+      ? await this.http.get<PaginatedOrderResponse>(path, query, { 'X-Buyer-Delegation-Token': delegationToken })
+      : await this.http.get<PaginatedOrderResponse>(path, query);
 
     return {
       orders: response.data,
