@@ -51,6 +51,16 @@ class AgentMesh_Plugin {
 		add_action( 'rest_api_init', [ $this, 'register_routes' ] );
 		add_action( 'init', [ $this, 'init_webhooks' ] );
 		add_action( 'init', [ $this, 'init_schema_injector' ] );
+		// The per-add-on selections render as readable line-item meta; the raw
+		// _agentmesh_addons JSON blob is machine-only round-trip data — hide it
+		// from the admin order screen so it doesn't clutter the item.
+		add_filter( 'woocommerce_hidden_order_itemmeta', [ $this, 'hide_addon_blob_meta' ] );
+	}
+
+	/** Keep the machine-only _agentmesh_addons item meta out of the admin order UI. */
+	public function hide_addon_blob_meta( array $keys ): array {
+		$keys[] = '_agentmesh_addons';
+		return $keys;
 	}
 
 	public function init_schema_injector(): void {

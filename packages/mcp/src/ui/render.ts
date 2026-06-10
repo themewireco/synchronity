@@ -675,9 +675,12 @@ export function renderProduct(root: HTMLElement, model: ProductCardModel, ctx: V
   // cart/checkout, including right after the first add).
   const sessionKey = `active_cart_${model.siteId}`;
   let currentCartId = sessionStorage.getItem(sessionKey) || (model.addToCart.params.cart_id as string) || '';
-  const cartBtnContainer = el('span');
+  // The bag floats over the hero (on the card, NOT in the body) so it survives the
+  // options wizard re-rendering the body — the buyer can reach the cart from any step.
+  const cartBtnContainer = el('span', 'syn-prodbag');
   const bag = viewCartButton(model.siteId, ctx);
   cartBtnContainer.appendChild(bag);
+  card.appendChild(cartBtnContainer);
   const updateCartId = (cId?: string) => {
     if (!cId) return;
     currentCartId = cId;
@@ -700,7 +703,7 @@ export function renderProduct(root: HTMLElement, model: ProductCardModel, ctx: V
     selectBtn.type = 'button';
     selectBtn.disabled = !model.inStock;
     selectBtn.onclick = () => renderOptionsWizard(body, model, ctx, updateCartId, heroImg);
-    right.append(selectBtn, cartBtnContainer);
+    right.append(selectBtn);
     footer.appendChild(right);
     body.appendChild(footer);
   } else {
@@ -740,7 +743,7 @@ export function renderProduct(root: HTMLElement, model: ProductCardModel, ctx: V
     };
 
     const right = el('div', 'syn-rowactions');
-    right.append(qty.node, btn, cartBtnContainer);
+    right.append(qty.node, btn);
     footer.appendChild(right);
     body.appendChild(footer);
   }

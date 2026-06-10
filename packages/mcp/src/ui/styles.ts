@@ -36,7 +36,11 @@ body {
   box-shadow: var(--syn-shadow);
   overflow: hidden;
 }
-.syn-card-product { max-width: 460px; margin: 0 auto; }
+.syn-card-product { max-width: 460px; margin: 0 auto; position: relative; }
+/* Shopping bag floats over the hero so it stays visible through the options wizard
+   (which re-renders the card body). */
+.syn-prodbag { position: absolute; top: 10px; right: 10px; z-index: 2; }
+.syn-prodbag .syn-bag { background: var(--syn-surface); box-shadow: var(--syn-shadow); }
 
 /* Buttons (rounded-full pills) */
 .syn-btn {
@@ -121,7 +125,7 @@ body {
 }
 
 /* ── Single product ── */
-.syn-hero { background: #f7f8fa; aspect-ratio: 16 / 10; max-height: 220px; display: flex; align-items: center; justify-content: center; position: relative; }
+.syn-hero { background: #f7f8fa; aspect-ratio: 16 / 10; display: flex; align-items: center; justify-content: center; position: relative; }
 .syn-hero img { width: 100%; height: 100%; object-fit: cover; }
 .syn-dots { position: absolute; bottom: 12px; left: 0; right: 0; display: flex; justify-content: center; gap: 6px; }
 .syn-dot { width: 7px; height: 7px; border-radius: 999px; background: #d0d5dd; border: 0; padding: 0; cursor: pointer; }
