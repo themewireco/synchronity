@@ -36,6 +36,7 @@ body {
   box-shadow: var(--syn-shadow);
   overflow: hidden;
 }
+.syn-card-product { max-width: 460px; margin: 0 auto; }
 
 /* Buttons (rounded-full pills) */
 .syn-btn {

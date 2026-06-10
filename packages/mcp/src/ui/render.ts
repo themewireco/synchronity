@@ -659,7 +659,7 @@ export function renderProduct(root: HTMLElement, model: ProductCardModel, ctx: V
     clearInterval((root as any)._cartPollInterval);
     (root as any)._cartPollInterval = null;
   }
-  const card = el('div', 'syn-card');
+  const card = el('div', 'syn-card syn-card-product');
   const heroImg = buildHero(card, model);
 
   const body = el('div', 'syn-body');
@@ -670,20 +670,20 @@ export function renderProduct(root: HTMLElement, model: ProductCardModel, ctx: V
   }
   body.appendChild(head);
 
-  // Cart-id session tracking + a contextual "View cart" button once a cart exists.
+  // Cart-id session tracking + an always-visible shopping bag (reads the live cart
+  // at click time, mirroring renderProductList — so the buyer can always reach the
+  // cart/checkout, including right after the first add).
   const sessionKey = `active_cart_${model.siteId}`;
   let currentCartId = sessionStorage.getItem(sessionKey) || (model.addToCart.params.cart_id as string) || '';
   const cartBtnContainer = el('span');
-  const showViewCartBtn = (cId: string) => {
-    cartBtnContainer.replaceChildren();
-    if (cId) cartBtnContainer.appendChild(viewCartButton(model.siteId, cId, ctx));
-  };
+  const bag = viewCartButton(model.siteId, ctx);
+  cartBtnContainer.appendChild(bag);
   const updateCartId = (cId?: string) => {
     if (!cId) return;
     currentCartId = cId;
     sessionStorage.setItem(sessionKey, cId);
     model.addToCart.params.cart_id = cId;
-    showViewCartBtn(cId);
+    bag.repaint();
   };
   if (currentCartId) updateCartId(currentCartId);
 
@@ -736,6 +736,7 @@ export function renderProduct(root: HTMLElement, model: ProductCardModel, ctx: V
     btn.onclick = async (e) => {
       await (origin as ((this: HTMLButtonElement, ev: PointerEvent) => unknown) | null)?.call(btn, e);
       updateCartId(model.addToCart.params.cart_id as string);
+      bag.repaint(); // count grew; the cart id is now known to the shared bag
     };
 
     const right = el('div', 'syn-rowactions');
