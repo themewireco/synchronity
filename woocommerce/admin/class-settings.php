@@ -5,6 +5,9 @@
 
 defined( 'ABSPATH' ) || exit;
 
+require_once __DIR__ . '/class-acf-source.php';
+require_once __DIR__ . '/class-price-map.php';
+
 class AgentMesh_Settings {
 
 	public function __construct() {
@@ -14,6 +17,10 @@ class AgentMesh_Settings {
 		add_action( 'woocommerce_settings_tabs_agentmesh', [ $this, 'maybe_generate_site_id' ] );
 		// Custom field type that renders the Generate + Copy buttons under the Connector Key input.
 		add_action( 'woocommerce_admin_field_agentmesh_key_actions', [ $this, 'render_key_actions' ] );
+		// Assisted add-on pickers (custom field types rendered below).
+		add_action( 'woocommerce_admin_field_agentmesh_price_map_builder', [ $this, 'render_price_map_builder' ] );
+		add_action( 'woocommerce_admin_field_agentmesh_field_multiselect', [ $this, 'render_field_multiselect' ] );
+		add_action( 'woocommerce_admin_field_agentmesh_price_source_select', [ $this, 'render_price_source_select' ] );
 		// AJAX endpoint that mints a new key, pushes it to the gateway (when linked), and persists it.
 		add_action( 'wp_ajax_agentmesh_rotate_key', [ $this, 'ajax_rotate_key' ] );
 	}
@@ -24,11 +31,39 @@ class AgentMesh_Settings {
 	}
 
 	public function output_settings(): void {
+		// Assisted-picker UI for the add-on settings. Only enqueued on this tab.
+		wp_enqueue_script(
+			'agentmesh-addon-settings',
+			AGENTMESH_PLUGIN_URL . 'admin/js/addon-settings.js',
+			[],
+			AGENTMESH_VERSION,
+			true
+		);
 		WC_Admin_Settings::output_fields( $this->get_settings() );
 	}
 
 	public function save_settings(): void {
 		WC_Admin_Settings::save_fields( $this->get_settings() );
+
+		// The custom add-on field types below are not handled by save_fields().
+
+		// Price map: the hidden input carries JSON serialized by the builder JS.
+		if ( isset( $_POST['agentmesh_addon_price_map'] ) ) {
+			$raw     = wp_unslash( $_POST['agentmesh_addon_price_map'] );
+			$decoded = json_decode( (string) $raw, true );
+			update_option( 'agentmesh_addon_price_map', is_array( $decoded ) ? wp_json_encode( $decoded ) : '' );
+		}
+
+		// Multiselects post arrays; store as comma-joined CSV (read side splits on comma/newline).
+		foreach ( [ 'agentmesh_addon_hidden_fields', 'agentmesh_addon_multi_groups' ] as $opt ) {
+			$vals  = isset( $_POST[ $opt ] ) ? (array) wp_unslash( $_POST[ $opt ] ) : [];
+			$clean = array_values( array_filter( array_map( 'sanitize_text_field', $vals ), 'strlen' ) );
+			update_option( $opt, implode( ', ', $clean ) );
+		}
+
+		if ( isset( $_POST['agentmesh_product_price_field'] ) ) {
+			update_option( 'agentmesh_product_price_field', sanitize_text_field( wp_unslash( $_POST['agentmesh_product_price_field'] ) ) );
+		}
 	}
 
 	/**
@@ -182,26 +217,22 @@ class AgentMesh_Settings {
 			],
 
 			[
-				'title'    => __( 'Hidden Add-on Fields', 'agentmesh-woocommerce' ),
-				'type'     => 'textarea',
-				'desc'     => __( 'Comma- or newline-separated list of ACF field names or keys to hide from add-ons (e.g. internal fields). Matching fields are never exposed.', 'agentmesh-woocommerce' ),
-				'id'       => 'agentmesh_addon_hidden_fields',
-				'css'      => 'min-width:450px;height:80px;',
+				'title'      => __( 'Hidden Add-on Fields', 'agentmesh-woocommerce' ),
+				'type'       => 'agentmesh_field_multiselect',
+				'desc'       => __( 'Select ACF fields to hide from add-ons (e.g. internal fields). Matching fields are never exposed.', 'agentmesh-woocommerce' ),
+				'id'         => 'agentmesh_addon_hidden_fields',
+				'agm_source' => 'fields',
 			],
 
 			[
-				'title'    => __( 'Add-on Price Map (JSON)', 'agentmesh-woocommerce' ),
-				'type'     => 'textarea',
+				'title'    => __( 'Add-on Price Map', 'agentmesh-woocommerce' ),
+				'type'     => 'agentmesh_price_map_builder',
 				'desc'     => __(
-					'Optional. JSON keyed by ACF add-on field name. Per add-on set ONE of: '
-					. '<code>{"&lt;field&gt;":{"amount":"10.00"}}</code> (fixed per-unit fee), '
-					. '<code>{"&lt;field&gt;":{"options":{"&lt;opt_value&gt;":"5.00"}}}</code> (per-option fees), or '
-					. '<code>{"&lt;field&gt;":{"price_field":"&lt;acf_field_key&gt;"}}</code> (read the fee from another ACF field on the product). '
+					'Optional. Attach a fee to each priced add-on field: a fixed per-unit fee, a fee per option value, or read the fee from another ACF field. '
 					. 'Amounts are in the store currency. Unmapped add-ons fall back to a repeater price subfield, a <code>(+N)</code>/<code>(-N)</code> label suffix, or free.',
 					'agentmesh-woocommerce'
 				),
 				'id'       => 'agentmesh_addon_price_map',
-				'css'      => 'min-width:450px;height:120px;font-family:monospace;',
 			],
 
 			[
@@ -217,11 +248,18 @@ class AgentMesh_Settings {
 			],
 
 			[
-				'title'    => __( 'Multi-select Add-on Groups', 'agentmesh-woocommerce' ),
-				'type'     => 'textarea',
-				'desc'     => __( 'Comma- or newline-separated list of add-on group titles that allow choosing MORE THAN ONE option (e.g. "Extra Toppings"). All other groups are single-choice. Applies to grouped (nested-repeater) add-ons.', 'agentmesh-woocommerce' ),
-				'id'       => 'agentmesh_addon_multi_groups',
-				'css'      => 'min-width:450px;height:60px;',
+				'title' => __( 'Product price source', 'agentmesh-woocommerce' ),
+				'type'  => 'agentmesh_price_source_select',
+				'desc'  => __( 'Optional. ACF field holding the consumer/display price (e.g. non_price). Takes effect once consumer pricing is enabled; until then the WooCommerce price is used.', 'agentmesh-woocommerce' ),
+				'id'    => 'agentmesh_product_price_field',
+			],
+
+			[
+				'title'      => __( 'Multi-select Add-on Groups', 'agentmesh-woocommerce' ),
+				'type'       => 'agentmesh_field_multiselect',
+				'desc'       => __( 'Select add-on group titles that allow choosing MORE THAN ONE option (e.g. "Extra Toppings"). All other groups are single-choice. Applies to grouped (nested-repeater) add-ons.', 'agentmesh-woocommerce' ),
+				'id'         => 'agentmesh_addon_multi_groups',
+				'agm_source' => 'groups',
 			],
 
 			[
@@ -244,6 +282,121 @@ class AgentMesh_Settings {
 			return __( 'Advanced Custom Fields (ACF) was not detected on this site. Product add-ons are inactive until ACF is installed and active — the settings below have no effect.', 'agentmesh-woocommerce' );
 		}
 		return __( 'Expose ACF-defined product options to AI agents as purchasable add-ons. Choices, requirements, and optional price modifiers carry through cart and checkout onto the order.', 'agentmesh-woocommerce' );
+	}
+
+	/**
+	 * Render the assisted price-map builder. The hidden input carries the JSON
+	 * the builder JS keeps in sync; a collapsed textarea allows raw JSON editing.
+	 */
+	public function render_price_map_builder( array $field ): void {
+		$json   = (string) get_option( 'agentmesh_addon_price_map', '' );
+		$rows   = AgentMesh_Price_Map::json_to_rows( $json );
+		$fields = AgentMesh_ACF_Source::addon_fields();
+		$desc   = isset( $field['desc'] ) ? (string) $field['desc'] : '';
+		?>
+		<tr valign="top">
+			<th scope="row" class="titledesc"><?php echo esc_html( $field['title'] ?? '' ); ?></th>
+			<td class="forminp">
+				<div
+					id="agm-pricemap"
+					data-fields="<?php echo esc_attr( wp_json_encode( $fields ) ); ?>"
+					data-rows="<?php echo esc_attr( wp_json_encode( $rows ) ); ?>"
+				></div>
+				<input type="hidden" id="agm-pricemap-json" name="agentmesh_addon_price_map" value="<?php echo esc_attr( $json ); ?>">
+				<p><a href="#" id="agm-pricemap-toggle"><?php echo esc_html__( 'Edit as JSON', 'agentmesh-woocommerce' ); ?></a></p>
+				<textarea id="agm-pricemap-raw" style="display:none;min-width:450px;height:120px;font-family:monospace;"><?php echo esc_textarea( $json ); ?></textarea>
+				<?php if ( '' !== $desc ) : ?>
+					<p class="description"><?php echo wp_kses_post( $desc ); ?></p>
+				<?php endif; ?>
+			</td>
+		</tr>
+		<?php
+	}
+
+	/**
+	 * Render a multi-select for either ACF add-on fields or grouped-add-on titles.
+	 * Stale current values not present in the option list are preserved as
+	 * pre-selected options.
+	 */
+	public function render_field_multiselect( array $field ): void {
+		$id     = (string) ( $field['id'] ?? '' );
+		$source = $field['agm_source'] ?? 'fields';
+
+		// [ value => label ] option list.
+		$options = [];
+		if ( 'groups' === $source ) {
+			foreach ( AgentMesh_ACF_Source::grouped_group_titles() as $title ) {
+				$options[ (string) $title ] = (string) $title;
+			}
+		} else {
+			foreach ( AgentMesh_ACF_Source::addon_fields() as $f ) {
+				$options[ (string) $f['name'] ] = sprintf( '%s (%s)', $f['label'], $f['name'] );
+			}
+		}
+
+		// Current CSV value -> trimmed list.
+		$current_raw = (string) get_option( $id, '' );
+		$current     = array_values( array_filter( array_map( 'trim', preg_split( '/[,\n\r]+/', $current_raw ) ), 'strlen' ) );
+
+		// Preserve stale entries not in the option list.
+		foreach ( $current as $val ) {
+			if ( ! isset( $options[ $val ] ) ) {
+				$options[ $val ] = $val;
+			}
+		}
+
+		$show_group_note = ( 'groups' === $source ) && ! get_option( 'agentmesh_addon_grouped_enabled' );
+		?>
+		<tr valign="top">
+			<th scope="row" class="titledesc"><?php echo esc_html( $field['title'] ?? '' ); ?></th>
+			<td class="forminp">
+				<select multiple name="<?php echo esc_attr( $id ); ?>[]" style="min-width:450px;min-height:120px;">
+					<?php foreach ( $options as $value => $label ) : ?>
+						<option value="<?php echo esc_attr( $value ); ?>" <?php selected( in_array( (string) $value, $current, true ) ); ?>><?php echo esc_html( $label ); ?></option>
+					<?php endforeach; ?>
+				</select>
+				<?php if ( ! empty( $field['desc'] ) ) : ?>
+					<p class="description"><?php echo wp_kses_post( $field['desc'] ); ?></p>
+				<?php endif; ?>
+				<?php if ( $show_group_note ) : ?>
+					<p class="description"><?php echo esc_html__( 'Only applies when Grouped Add-ons is enabled.', 'agentmesh-woocommerce' ); ?></p>
+				<?php endif; ?>
+			</td>
+		</tr>
+		<?php
+	}
+
+	/**
+	 * Render the product price-source select (capture-only — read side decides use).
+	 */
+	public function render_price_source_select( array $field ): void {
+		$current = (string) get_option( 'agentmesh_product_price_field', '' );
+		?>
+		<tr valign="top">
+			<th scope="row" class="titledesc"><?php echo esc_html( $field['title'] ?? '' ); ?></th>
+			<td class="forminp">
+				<select name="agentmesh_product_price_field">
+					<option value=""><?php echo esc_html__( '— WooCommerce price (default) —', 'agentmesh-woocommerce' ); ?></option>
+					<?php
+					foreach ( AgentMesh_ACF_Source::addon_fields() as $f ) {
+						if ( ! in_array( $f['type'], [ 'number', 'text' ], true ) ) {
+							continue;
+						}
+						printf(
+							'<option value="%s" %s>%s</option>',
+							esc_attr( $f['name'] ),
+							selected( $current, $f['name'], false ),
+							esc_html( sprintf( '%s (%s)', $f['label'], $f['name'] ) )
+						);
+					}
+					?>
+				</select>
+				<?php if ( ! empty( $field['desc'] ) ) : ?>
+					<p class="description"><?php echo wp_kses_post( $field['desc'] ); ?></p>
+				<?php endif; ?>
+			</td>
+		</tr>
+		<?php
 	}
 
 	/**
