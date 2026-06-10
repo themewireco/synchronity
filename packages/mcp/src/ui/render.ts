@@ -428,6 +428,14 @@ function getActiveCartId(siteId: string): string {
 function setActiveCartId(siteId: string, cartId: string): void {
   if (cartId) sessionStorage.setItem(`active_cart_${siteId}`, cartId);
 }
+/** Remember a site's display name (set on the product-list model) so later steps —
+ *  e.g. the order-confirmation message — can show "at <Store>" instead of a raw UUID. */
+function setSiteName(siteId: string, name?: string): void {
+  if (name) sessionStorage.setItem(`site_name_${siteId}`, name);
+}
+function getSiteName(siteId: string): string {
+  return sessionStorage.getItem(`site_name_${siteId}`) || '';
+}
 /** Forget a site's cart — used when the gateway reports it no longer exists (a
  *  stale id left in sessionStorage by a previous conversation or an expiry). */
 function clearActiveCart(siteId: string): void {
@@ -513,6 +521,7 @@ function viewCartButton(siteId: string, ctx: ViewCtx): BagButton {
 /** Render a product-list card (search_products). */
 export function renderProductList(root: HTMLElement, model: ProductListCardModel, ctx: ViewCtx): void {
   root.replaceChildren();
+  setSiteName(model.siteId, model.siteName); // cache for later steps (e.g. order-confirmation message)
   const card = el('div', 'syn-card');
   if (model.products.length === 0) {
     card.appendChild(el('div', 'syn-listhead', 'No products matched that search.'));
@@ -1955,7 +1964,14 @@ function renderSuccessStep(
     sessionStorage.removeItem(sessionKey);
 
     if (ctx.sendMessage && orderId) {
-      ctx.sendMessage(`Check status of order "${orderId}" on site "${siteId}".`);
+      // Human-readable: show the store name, not the raw site UUID. The model still
+      // has the site_id in context from the checkout it just completed.
+      const storeName = getSiteName(siteId);
+      ctx.sendMessage(
+        storeName
+          ? `Please show the status of my order #${orderId} at ${storeName}.`
+          : `Please show the status of my order #${orderId}.`,
+      );
     } else {
       // Fallback
       state.step = 'cart';
