@@ -9,6 +9,22 @@ function money(m?: { amount: string; currency: string }): string {
   return `${sym}${m.amount}`;
 }
 
+/** Lowest variant price formatted, or undefined when there are no priced variants. */
+function minVariantPrice(rawVariants: any): string | undefined {
+  if (!Array.isArray(rawVariants) || rawVariants.length === 0) return undefined;
+  let min: { amount: number; currency: string } | undefined;
+  for (const v of rawVariants) {
+    const amt = parseFloat(v?.price?.amount);
+    const currency = v?.price?.currency;
+    // Treat a variant as price-less unless it has BOTH a finite amount and a
+    // non-empty currency — otherwise we'd format a price with `currency: undefined`.
+    if (!Number.isFinite(amt) || typeof currency !== 'string' || currency.length === 0) continue;
+    if (!min || amt < min.amount) min = { amount: amt, currency };
+  }
+  if (!min) return undefined;
+  return money({ amount: min.amount.toFixed(2), currency: min.currency });
+}
+
 /** Map AMPS product addons (snake_case) into the lean card addon shape. */
 function buildAddons(raw: any): ProductCardAddon[] | undefined {
   if (!Array.isArray(raw) || raw.length === 0) return undefined;
@@ -106,6 +122,14 @@ export function buildProductCard(p: any, siteId: string, cartId?: string): Produ
   };
 }
 
+/** True when a raw AMPS product needs the options wizard: variants, OR >=2 addons, OR any required addon. */
+function rawNeedsOptions(p: any): boolean {
+  const variants = Array.isArray(p?.variants) ? p.variants : [];
+  const addons = Array.isArray(p?.addons) ? p.addons : [];
+  const hasRequired = addons.some((a: any) => a?.required);
+  return variants.length > 0 || addons.length >= 2 || hasRequired;
+}
+
 /** Map AMPS product variants into the lean card variant shape (undefined when none). */
 function buildVariants(raw: any): ProductCardVariant[] | undefined {
   if (!Array.isArray(raw) || raw.length === 0) return undefined;
@@ -165,16 +189,20 @@ export function buildProductListCard(products: any[], siteId: string, siteName?:
     kind: 'productList',
     siteId,
     siteName,
-    products: (products ?? []).map((p) => ({
-      productId: p.product_id,
-      title: p.title,
-      price: money(p.price),
-      image: p.image_url ?? p.images?.[0]?.url ?? undefined,
-      url: p.url ?? undefined,
-      inStock: p.availability === 'in_stock',
-      addToCart: { label: 'Add to cart', toolName: 'add_to_cart',
-        params: { site_id: siteId, product_id: p.product_id, quantity: 1 } },
-    })),
+    products: (products ?? []).map((p) => {
+      const fromPrice = minVariantPrice(p.variants);
+      return {
+        productId: p.product_id,
+        title: p.title,
+        price: fromPrice ? `from ${fromPrice}` : money(p.price),
+        image: p.image_url ?? p.images?.[0]?.url ?? undefined,
+        url: p.url ?? undefined,
+        inStock: p.availability === 'in_stock',
+        hasOptions: rawNeedsOptions(p),
+        addToCart: { label: 'Add to cart', toolName: 'add_to_cart',
+          params: { site_id: siteId, product_id: p.product_id, quantity: 1 } },
+      };
+    }),
   };
 }
 

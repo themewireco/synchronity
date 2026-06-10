@@ -13,6 +13,7 @@ import type {
   CheckoutCardModel,
   CardAction,
 } from '../cards/types.js';
+import { deriveAxes, resolveVariant, isValueAvailable } from './variantMatrix.js';
 
 /** Result shape returned by the host bridge for a tools/call. */
 export interface ToolCallResult {
@@ -557,21 +558,46 @@ export function renderProductList(root: HTMLElement, model: ProductListCardModel
     body.appendChild(meta);
 
     const actions = el('div', 'syn-rowactions');
-    const qty = qtyStepper();
-    const btn = addToCartButton(
-      p.addToCart, ctx,
-      () => ({ quantity: qty.get(), missing: [] }),
-      'sm',
-    );
-    btn.disabled = !p.inStock;
+    if (p.hasOptions) {
+      const selectBtn = el('button', 'syn-btn syn-btn-primary syn-btn-sm', 'Select options') as HTMLButtonElement;
+      selectBtn.type = 'button';
+      selectBtn.disabled = !p.inStock;
+      selectBtn.onclick = async () => {
+        selectBtn.disabled = true;
+        const original = selectBtn.textContent;
+        selectBtn.textContent = '…';
+        try {
+          const res = await ctx.callTool('get_product', {
+            site_id: (p.addToCart.params.site_id as string),
+            product_id: p.productId,
+          });
+          if (res.isError) throw new Error(textOf(res) || 'Could not load options');
+          ctx.onResult?.(res); // renders the single-product card (with wizard) in-frame
+        } catch (err) {
+          selectBtn.disabled = false;
+          selectBtn.textContent = original;
+          showButtonError(selectBtn, err);
+        }
+      };
+      actions.append(selectBtn);
+    } else {
+      // existing inline qty + Add-to-cart path (unchanged)
+      const qty = qtyStepper();
+      const btn = addToCartButton(
+        p.addToCart, ctx,
+        () => ({ quantity: qty.get(), missing: [] }),
+        'sm',
+      );
+      btn.disabled = !p.inStock;
 
-    const originalOnclick = btn.onclick;
-    btn.onclick = async (e) => {
-      await (originalOnclick as ((this: HTMLButtonElement, ev: PointerEvent) => unknown) | null)?.call(btn, e);
-      bag.repaint(); // count grew; the cart id is now known to the shared bag
-    };
+      const originalOnclick = btn.onclick;
+      btn.onclick = async (e) => {
+        await (originalOnclick as ((this: HTMLButtonElement, ev: PointerEvent) => unknown) | null)?.call(btn, e);
+        bag.repaint(); // count grew; the cart id is now known to the shared bag
+      };
 
-    actions.append(qty.node, btn);
+      actions.append(qty.node, btn);
+    }
 
     row.append(thumb, body, actions);
     list.appendChild(row);
@@ -588,10 +614,11 @@ function needsOptionsWizard(model: ProductCardModel): boolean {
   return !!(model.variants && model.variants.length > 0) || addonCount >= 2 || hasRequired;
 }
 
-/** Build the hero image / carousel into a card. */
-function buildHero(card: HTMLElement, model: ProductCardModel): void {
+/** Build the hero image / carousel into a card; returns the hero <img> (for variant
+ *  image-swap) or undefined when the product has no images. */
+function buildHero(card: HTMLElement, model: ProductCardModel): HTMLImageElement | undefined {
   const images = model.images && model.images.length > 0 ? model.images : (model.image ? [model.image] : []);
-  if (images.length === 0) return;
+  if (images.length === 0) return undefined;
   const hero = el('div', 'syn-hero');
   const img = el('img');
   img.alt = model.title;
@@ -616,6 +643,7 @@ function buildHero(card: HTMLElement, model: ProductCardModel): void {
   }
   show(0);
   card.appendChild(hero);
+  return img;
 }
 
 /** A label/value review row. */
@@ -632,13 +660,13 @@ export function renderProduct(root: HTMLElement, model: ProductCardModel, ctx: V
     (root as any)._cartPollInterval = null;
   }
   const card = el('div', 'syn-card');
-  buildHero(card, model);
+  const heroImg = buildHero(card, model);
 
   const body = el('div', 'syn-body');
   const head = el('div');
   head.appendChild(el('div', 'syn-title syn-display', model.title));
   if (model.description) {
-    head.appendChild(el('div', 'syn-muted', model.description));
+    head.appendChild(el('div', 'syn-muted syn-desc', model.description));
   }
   body.appendChild(head);
 
@@ -671,7 +699,7 @@ export function renderProduct(root: HTMLElement, model: ProductCardModel, ctx: V
     const selectBtn = el('button', 'syn-btn syn-btn-primary', 'Select options');
     selectBtn.type = 'button';
     selectBtn.disabled = !model.inStock;
-    selectBtn.onclick = () => renderOptionsWizard(body, model, ctx, updateCartId);
+    selectBtn.onclick = () => renderOptionsWizard(body, model, ctx, updateCartId, heroImg);
     right.append(selectBtn, cartBtnContainer);
     footer.appendChild(right);
     body.appendChild(footer);
@@ -726,9 +754,11 @@ function renderOptionsWizard(
   model: ProductCardModel,
   ctx: ViewCtx,
   updateCartId: (cId?: string) => void,
+  heroImg?: HTMLImageElement,
 ): void {
   const base = parsePrice(model.price);
   let selectedVariant: ProductCardVariant | undefined;
+  const selectedAxis: Record<string, string> = {};
   const addons = model.addons && model.addons.length > 0 ? addonGroups(model.addons) : undefined;
   const qtyState = { n: 1 };
 
@@ -752,21 +782,48 @@ function renderOptionsWizard(
     const hint = el('div', 'syn-err');
 
     if (step === 'variant') {
-      const wrap = el('div', 'syn-form');
-      for (const v of model.variants ?? []) {
-        const cardBtn = el('button', 'syn-radio-card');
-        cardBtn.type = 'button';
-        cardBtn.setAttribute('aria-checked', selectedVariant?.variantId === v.variantId ? 'true' : 'false');
-        cardBtn.appendChild(el('div', 'syn-radio-title', v.title));
-        if (v.attributes && v.attributes.length > 0) {
-          cardBtn.appendChild(el('div', 'syn-radio-desc', v.attributes.map((a) => `${a.name}: ${a.value}`).join(' · ')));
+      const variants = model.variants ?? [];
+      const axes = deriveAxes(variants);
+
+      if (axes.length === 0) {
+        // Fallback: variants have no attributes — keep the flat radio-card list.
+        const wrap = el('div', 'syn-form');
+        for (const v of variants) {
+          const cardBtn = el('button', 'syn-radio-card');
+          cardBtn.type = 'button';
+          cardBtn.setAttribute('aria-checked', selectedVariant?.variantId === v.variantId ? 'true' : 'false');
+          cardBtn.appendChild(el('div', 'syn-radio-title', v.title));
+          cardBtn.appendChild(el('div', 'syn-radio-cost', v.inStock ? v.price : `${v.price} · Out of stock`));
+          cardBtn.disabled = !v.inStock;
+          cardBtn.onclick = () => { selectedVariant = v; render(); };
+          wrap.appendChild(cardBtn);
         }
-        cardBtn.appendChild(el('div', 'syn-radio-cost', v.inStock ? v.price : `${v.price} · Out of stock`));
-        cardBtn.disabled = !v.inStock;
-        cardBtn.onclick = () => { selectedVariant = v; render(); };
-        wrap.appendChild(cardBtn);
+        body.appendChild(wrap);
+      } else {
+        const wrap = el('div', 'syn-form');
+        for (const axis of axes) {
+          wrap.appendChild(el('div', 'syn-axis', axis.name));
+          const row = el('div', 'syn-pillrow');
+          for (const value of axis.values) {
+            const available = isValueAvailable(variants, selectedAxis, axis.name, value);
+            const pill = el('button', 'syn-pill' + (selectedAxis[axis.name] === value ? ' syn-pill-sel' : '') + (available ? '' : ' syn-pill-oos'), value) as HTMLButtonElement;
+            pill.type = 'button';
+            pill.disabled = !available;
+            pill.setAttribute('aria-checked', selectedAxis[axis.name] === value ? 'true' : 'false');
+            pill.onclick = () => {
+              selectedAxis[axis.name] = value;
+              selectedVariant = resolveVariant(variants, selectedAxis);
+              // When a variant resolves, show its image if present, else fall back to the
+              // product's base image (spec §2). Don't touch the hero on partial selection.
+              if (heroImg && selectedVariant) heroImg.src = selectedVariant.image || model.image || heroImg.src;
+              render();
+            };
+            row.appendChild(pill);
+          }
+          wrap.appendChild(row);
+        }
+        body.appendChild(wrap);
       }
-      body.appendChild(wrap);
     } else if (step === 'addons' && addons) {
       body.appendChild(addons.node);
     } else {
@@ -780,7 +837,10 @@ function renderOptionsWizard(
         }
       }
       const totEl = el('span', 'syn-price', lineTotal());
-      const qStep = qtyStepper(() => { qtyState.n = qStep.get(); totEl.textContent = lineTotal(); });
+      // Use the qty the stepper passes in: qtyStepper() fires onChange during its
+      // own construction (sync()), before this `const qStep` is initialised, so
+      // reading qStep.get() here threw a TDZ ReferenceError and blanked the review step.
+      const qStep = qtyStepper((n) => { qtyState.n = n; totEl.textContent = lineTotal(); });
       const qRow = el('div', 'syn-totline');
       qRow.append(el('span', 'syn-muted', 'Quantity'), qStep.node);
       wrap.appendChild(qRow);
