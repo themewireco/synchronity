@@ -285,13 +285,15 @@ export const executeCheckout: ToolImplementation = async (client, args) => {
  * Tool: Get order details
  */
 export const getOrder: ToolImplementation = async (client, args) => {
-  const { site_id, order_id } = args;
+  const { site_id, order_id, buyer_delegation_token } = args;
 
   if (!site_id || !order_id) {
     throw new Error('site_id and order_id are required');
   }
 
-  const order = await client.orders.get(site_id as string, order_id as string);
+  // Orders are buyer-private; pass the buyer's delegation token so the gateway
+  // confirms the caller owns this order.
+  const order = await client.orders.get(site_id as string, order_id as string, buyer_delegation_token as string | undefined);
   return orderMarkdown(order);
 };
 
@@ -299,7 +301,7 @@ export const getOrder: ToolImplementation = async (client, args) => {
  * Tool: List orders
  */
 export const listOrders: ToolImplementation = async (client, args) => {
-  const { site_id, status, page = 1, limit = 20 } = args;
+  const { site_id, status, page = 1, limit = 20, buyer_delegation_token } = args;
 
   if (!site_id) {
     throw new Error('site_id is required');
@@ -309,7 +311,7 @@ export const listOrders: ToolImplementation = async (client, args) => {
     status: status as 'pending' | 'processing' | 'completed' | 'cancelled' | 'refunded' | undefined,
     page: page as number,
     limit: limit as number,
-  });
+  }, buyer_delegation_token as string | undefined);
 
   return orderListMarkdown(orders);
 };
