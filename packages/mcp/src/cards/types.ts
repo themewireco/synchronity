@@ -60,6 +60,7 @@ export interface ProductListItem {
 export interface ProductListCardModel {
   kind: 'productList';
   siteId: string;
+  siteName?: string;   // store name for human-readable output (UUID fallback avoided)
   products: ProductListItem[];
 }
 

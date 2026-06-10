@@ -524,7 +524,7 @@ export function renderProductList(root: HTMLElement, model: ProductListCardModel
   header.style.justifyContent = 'space-between';
   header.style.alignItems = 'center';
   
-  const titleSpan = el('span', undefined, `${model.products.length} product${model.products.length === 1 ? '' : 's'}`);
+  const titleSpan = el('span', undefined, `${model.products.length} product${model.products.length === 1 ? '' : 's'}${model.siteName ? ` at ${model.siteName}` : ''}`);
   header.appendChild(titleSpan);
   
   const cartBtnContainer = el('span');

@@ -28,6 +28,7 @@ import { toLeanProduct } from './dto.js';
 import { textResult, cardResult } from './cards/renderCard.js';
 import { buildProductCard, buildProductListCard, buildCartCard, buildCheckoutCard, buildDelegationCard } from './cards/build.js';
 import { markdownFallback, orderMarkdown, orderListMarkdown, siteListMarkdown } from './cards/markdown.js';
+import { rememberSiteNames, siteNameFor } from './cards/siteNames.js';
 import { inlineCardImages } from './cards/inlineImages.js';
 import {
   formatPaymentSessionMarkdown,
@@ -69,7 +70,7 @@ export const searchProducts: ToolImplementation = async (client, args) => {
   // keep `data` as a defensive fallback for the raw paginated API shape.
   const r = results as { products?: Array<unknown>; data?: Array<unknown> };
   const products = r.products ?? r.data ?? [];
-  const listModel = buildProductListCard(products as any[], site_id as string);
+  const listModel = buildProductListCard(products as any[], site_id as string, siteNameFor(site_id as string));
   return cardResult(await inlineCardImages(listModel));
 };
 
@@ -323,6 +324,7 @@ export const listSites: ToolImplementation = async (client, args, config) => {
   });
   const data = await res.json() as Record<string, unknown>;
   if (!res.ok) throw new Error(JSON.stringify(data));
+  rememberSiteNames(data);   // cache id -> name for human-readable output elsewhere
   return siteListMarkdown(data);
 };
 
