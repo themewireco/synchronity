@@ -32,6 +32,12 @@ class AgentMesh_Settings {
 
 	public function output_settings(): void {
 		// Assisted-picker UI for the add-on settings. Only enqueued on this tab.
+		wp_enqueue_style(
+			'agentmesh-addon-settings',
+			AGENTMESH_PLUGIN_URL . 'admin/css/addon-settings.css',
+			[],
+			AGENTMESH_VERSION
+		);
 		wp_enqueue_script(
 			'agentmesh-addon-settings',
 			AGENTMESH_PLUGIN_URL . 'admin/js/addon-settings.js',
@@ -95,9 +101,9 @@ class AgentMesh_Settings {
 			[
 				'title'       => __( 'Gateway URL', 'agentmesh-woocommerce' ),
 				'type'        => 'url',
-				'desc'        => __( 'The base URL of your Synchronity Gateway instance (e.g. https://agentmesh-production.up.railway.app).', 'agentmesh-woocommerce' ),
+				'desc'        => __( 'The base URL of your Synchronity Gateway instance (e.g. https://api.synchronity.app).', 'agentmesh-woocommerce' ),
 				'id'          => 'agentmesh_gateway_url',
-				'placeholder' => 'https://agentmesh-production.up.railway.app',
+				'placeholder' => 'https://api.synchronity.app',
 				'css'         => 'min-width:350px;',
 			],
 

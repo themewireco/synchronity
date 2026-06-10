@@ -242,32 +242,8 @@ class AgentMesh_Checkout {
 
 			$item_id = $order->add_product( $product, $quantity );
 
-			// Fold add-on modifiers into the line total + stamp meta for display.
 			if ( ! empty( $selected_addons ) ) {
-				$line_item = $order->get_item( $item_id );
-				if ( $line_item ) {
-					$addon_per_unit = 0.0;
-					foreach ( $selected_addons as $sel ) {
-						$display_value = is_array( $sel['value'] ?? null )
-							? implode( ', ', array_map( 'strval', $sel['value'] ) )
-							: (string) ( $sel['value'] ?? '' );
-						$line_item->add_meta_data( (string) ( $sel['label'] ?? $sel['addon_id'] ), $display_value, true );
-						if ( isset( $sel['price_modifier']['amount'] ) ) {
-							$addon_per_unit += (float) $sel['price_modifier']['amount'];
-						}
-					}
-
-					// Machine-readable blob for order_to_amps round-tripping.
-					$line_item->add_meta_data( '_agentmesh_addons', wp_json_encode( $selected_addons ), true );
-
-					if ( 0.0 !== $addon_per_unit ) {
-						$base_unit  = (float) $product->get_price();
-						$line_value = ( $base_unit + $addon_per_unit ) * $quantity;
-						$line_item->set_subtotal( $line_value );
-						$line_item->set_total( $line_value );
-					}
-					$line_item->save();
-				}
+				self::fold_addons_into_line( $order, $item_id, $product, $quantity, $selected_addons );
 			}
 		}
 
@@ -322,6 +298,47 @@ class AgentMesh_Checkout {
 		$order->update_meta_data( '_agentmesh_cart_id', $cart_data['cart_id'] );
 
 		return $order;
+	}
+
+	/**
+	 * Fold selected add-ons into a line item: stamp display meta + the machine blob,
+	 * and add the price modifiers into the line subtotal/total so the ORDER total
+	 * (and therefore the charged amount) includes the surcharge.
+	 *
+	 * IMPORTANT: mutate the order's IN-MEMORY item instance (`get_item($id, false)`),
+	 * NOT a fresh DB-loaded copy (`get_item($id)` defaults $load_from_db=true). A
+	 * detached copy persists separately but is invisible to `calculate_totals()`,
+	 * which sums the in-memory items — that mismatch undercharged orders (line
+	 * subtotal showed the surcharge while the order total stayed at base price).
+	 */
+	private static function fold_addons_into_line( $order, $item_id, $product, int $quantity, array $selected_addons ): void {
+		// $load_from_db = false → the in-memory instance calculate_totals() will sum.
+		$line_item = $order->get_item( $item_id, false );
+		if ( ! $line_item ) {
+			return;
+		}
+		$addon_per_unit = 0.0;
+		foreach ( $selected_addons as $sel ) {
+			$display_value = is_array( $sel['value'] ?? null )
+				? implode( ', ', array_map( 'strval', $sel['value'] ) )
+				: (string) ( $sel['value'] ?? '' );
+			$line_item->add_meta_data( (string) ( $sel['label'] ?? $sel['addon_id'] ), $display_value, true );
+			if ( isset( $sel['price_modifier']['amount'] ) ) {
+				$addon_per_unit += (float) $sel['price_modifier']['amount'];
+			}
+		}
+
+		// Machine-readable blob for order_to_amps round-tripping (hidden in admin via
+		// the woocommerce_hidden_order_itemmeta filter — see AgentMesh_Checkout boot).
+		$line_item->add_meta_data( '_agentmesh_addons', wp_json_encode( $selected_addons ), true );
+
+		if ( 0.0 !== $addon_per_unit ) {
+			$base_unit  = (float) $product->get_price();
+			$line_value = ( $base_unit + $addon_per_unit ) * $quantity;
+			$line_item->set_subtotal( $line_value );
+			$line_item->set_total( $line_value );
+		}
+		$line_item->save();
 	}
 
 	/** Whether a selected-add-ons list contains a non-empty entry for $addon_id. */

@@ -102,7 +102,7 @@
 
 		// Field <select>: option text "{label} ({name})", value = name.
 		function fieldSelect( current, onChange ) {
-			var sel = el( 'select', { style: 'min-width:220px;' } );
+			var sel = el( 'select', {} );
 			sel.appendChild( el( 'option', { value: '' }, [ '— Select a field —' ] ) );
 			fields.forEach( function ( f ) {
 				var label = ( f.label || f.name ) + ' (' + f.name + ')';
@@ -121,7 +121,7 @@
 		}
 
 		function typeSelect( current, onChange ) {
-			var sel = el( 'select', { style: 'min-width:160px;' } );
+			var sel = el( 'select', {} );
 			[
 				[ 'options', 'Per-option fee' ],
 				[ 'amount', 'Fixed fee' ],
@@ -137,10 +137,10 @@
 
 		// Amount area depends on row type.
 		function amountArea( row ) {
-			var wrap = el( 'span', { style: 'display:inline-block;vertical-align:top;' } );
+			var wrap = el( 'div', { className: 'agm-pm-amounts-wrap' } );
 
 			if ( row.type === 'amount' ) {
-				var inp = el( 'input', { type: 'number', step: '0.01', value: row.amount || '', style: 'width:120px;' } );
+				var inp = el( 'input', { type: 'number', step: '0.01', value: row.amount || '', className: 'agm-pm-amtinp' } );
 				inp.addEventListener( 'input', function () { row.amount = inp.value; sync(); } );
 				wrap.appendChild( inp );
 				return wrap;
@@ -162,11 +162,11 @@
 					var amt = el( 'input', {
 						type: 'number', step: '0.01',
 						value: row.options[ value ] != null ? row.options[ value ] : '',
-						style: 'width:100px;margin-left:6px;'
+						className: 'agm-pm-optamt'
 					} );
 					amt.addEventListener( 'input', function () { row.options[ value ] = amt.value; sync(); } );
-					wrap.appendChild( el( 'div', { style: 'margin-bottom:4px;' }, [
-						el( 'span', { style: 'display:inline-block;min-width:160px;' }, [ lineLabel ] ),
+					wrap.appendChild( el( 'div', { className: 'agm-pm-optrow' }, [
+						el( 'span', { className: 'agm-pm-optlabel' }, [ lineLabel ] ),
 						amt
 					] ) );
 				} );
@@ -174,10 +174,10 @@
 			}
 
 			// No declared choices — allow free value/amount pairs.
-			var list = el( 'div', {} );
+			var list = el( 'div', { className: 'agm-pm-optlist' } );
 			function addPair( value, amount ) {
-				var valInp = el( 'input', { type: 'text', value: value || '', placeholder: 'option value', style: 'width:140px;' } );
-				var amtInp = el( 'input', { type: 'number', step: '0.01', value: amount != null ? amount : '', placeholder: 'amount', style: 'width:100px;margin-left:6px;' } );
+				var valInp = el( 'input', { type: 'text', value: value || '', placeholder: 'option value', className: 'agm-pm-optval' } );
+				var amtInp = el( 'input', { type: 'number', step: '0.01', value: amount != null ? amount : '', placeholder: 'amount', className: 'agm-pm-optamt' } );
 				var prevKey = value || '';
 				function update() {
 					if ( prevKey && prevKey !== valInp.value ) { delete row.options[ prevKey ]; }
@@ -187,8 +187,8 @@
 				}
 				valInp.addEventListener( 'input', update );
 				amtInp.addEventListener( 'input', update );
-				var rm = el( 'button', { type: 'button', className: 'button', style: 'margin-left:6px;' }, [ '×' ] );
-				var line = el( 'div', { style: 'margin-bottom:4px;' }, [ valInp, amtInp, rm ] );
+				var rm = el( 'button', { type: 'button', className: 'button agm-pm-remove' }, [ '×' ] );
+				var line = el( 'div', { className: 'agm-pm-optrow' }, [ valInp, amtInp, rm ] );
 				rm.addEventListener( 'click', function ( e ) {
 					e.preventDefault();
 					if ( prevKey ) { delete row.options[ prevKey ]; }
@@ -198,21 +198,20 @@
 				list.appendChild( line );
 			}
 			Object.keys( row.options || {} ).forEach( function ( v ) { addPair( v, row.options[ v ] ); } );
-			var addBtn = el( 'button', { type: 'button', className: 'button' }, [ '+ Add value' ] );
+			var addBtn = el( 'button', { type: 'button', className: 'button agm-pm-addopt' }, [ '+ Add value' ] );
 			addBtn.addEventListener( 'click', function ( e ) { e.preventDefault(); addPair( '', '' ); } );
 			wrap.appendChild( list );
 			wrap.appendChild( addBtn );
 			return wrap;
 		}
 
-		var table = el( 'table', { className: 'widefat', style: 'max-width:760px;margin-bottom:8px;' } );
-		var tbody = el( 'tbody', {} );
-		table.appendChild( tbody );
+		var builder = el( 'div', { className: 'agm-pm-builder' } );
 
 		function renderRow( row ) {
-			var tr = el( 'tr', {} );
+			var card = el( 'div', { className: 'agm-pm-row' } );
+			var controls = el( 'div', { className: 'agm-pm-row-controls' } );
 
-			var fieldCell = el( 'td', {}, [
+			var fieldDiv = el( 'div', { className: 'agm-pm-field' }, [
 				fieldSelect( row.field, function ( v ) {
 					row.field = v;
 					// Reset option map when the field changes (choices differ).
@@ -222,7 +221,7 @@
 				} )
 			] );
 
-			var typeCell = el( 'td', {}, [
+			var typeDiv = el( 'div', { className: 'agm-pm-type' }, [
 				typeSelect( row.type, function ( v ) {
 					row.type = v;
 					redrawAmount();
@@ -230,33 +229,33 @@
 				} )
 			] );
 
-			var amountCell = el( 'td', {} );
+			var amountsDiv = el( 'div', { className: 'agm-pm-amounts' } );
 			function redrawAmount() {
-				amountCell.innerHTML = '';
-				amountCell.appendChild( amountArea( row ) );
+				amountsDiv.innerHTML = '';
+				amountsDiv.appendChild( amountArea( row ) );
 			}
 			redrawAmount();
 
-			var removeBtn = el( 'button', { type: 'button', className: 'button' }, [ 'Remove' ] );
+			var removeBtn = el( 'button', { type: 'button', className: 'button agm-pm-remove' }, [ 'Remove' ] );
 			removeBtn.addEventListener( 'click', function ( e ) {
 				e.preventDefault();
 				var idx = rows.indexOf( row );
 				if ( idx !== -1 ) { rows.splice( idx, 1 ); }
-				tbody.removeChild( tr );
+				builder.removeChild( card );
 				sync();
 			} );
-			var actionCell = el( 'td', {}, [ removeBtn ] );
 
-			tr.appendChild( fieldCell );
-			tr.appendChild( typeCell );
-			tr.appendChild( amountCell );
-			tr.appendChild( actionCell );
-			tbody.appendChild( tr );
+			controls.appendChild( fieldDiv );
+			controls.appendChild( typeDiv );
+			controls.appendChild( amountsDiv );
+			controls.appendChild( el( 'div', { className: 'agm-pm-remove-wrap' }, [ removeBtn ] ) );
+			card.appendChild( controls );
+			builder.appendChild( card );
 		}
 
 		rows.forEach( renderRow );
 
-		var addRowBtn = el( 'button', { type: 'button', className: 'button' }, [ '+ Add a priced add-on field' ] );
+		var addRowBtn = el( 'button', { type: 'button', className: 'button agm-pm-add' }, [ '+ Add a priced add-on field' ] );
 		addRowBtn.addEventListener( 'click', function ( e ) {
 			e.preventDefault();
 			var row = normalizeRow( {} );
@@ -264,7 +263,7 @@
 			renderRow( row );
 		} );
 
-		root.appendChild( table );
+		root.appendChild( builder );
 		root.appendChild( addRowBtn );
 
 		// Raw-JSON escape hatch.

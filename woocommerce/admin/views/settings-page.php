@@ -51,7 +51,7 @@ $api_base      = esc_html( get_site_url() . '/wp-json/agentmesh/v1' );
 				</th>
 				<td>
 					<input type="url" id="agentmesh_gateway_url" name="agentmesh_gateway_url"
-						value="<?php echo $gateway_url; ?>" class="regular-text" placeholder="https://agentmesh-production.up.railway.app" />
+						value="<?php echo $gateway_url; ?>" class="regular-text" placeholder="https://api.synchronity.app" />
 					<p class="description"><?php esc_html_e( 'Base URL of the Synchronity Gateway.', 'agentmesh-woocommerce' ); ?></p>
 				</td>
 			</tr>
