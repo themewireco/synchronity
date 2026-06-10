@@ -54,6 +54,7 @@ export interface ProductListItem {
   image?: string;
   url?: string;
   inStock: boolean;
+  hasOptions?: boolean;   // true when the product needs the options wizard (variants / required / ≥2 addons)
   addToCart: CardAction;
 }
 
