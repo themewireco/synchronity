@@ -294,7 +294,9 @@ export const getOrder: ToolImplementation = async (client, args) => {
   // Orders are buyer-private; pass the buyer's delegation token so the gateway
   // confirms the caller owns this order.
   const order = await client.orders.get(site_id as string, order_id as string, buyer_delegation_token as string | undefined);
-  return orderMarkdown(order);
+  // Dual output: markdown text (fallback for non-View hosts) + the order as
+  // structuredContent so the View can render the status in-frame after checkout.
+  return { content: [{ type: 'text', text: orderMarkdown(order) }], structuredContent: order };
 };
 
 /**
