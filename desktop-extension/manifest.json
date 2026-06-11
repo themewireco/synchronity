@@ -6,10 +6,10 @@
   "description": "Shop anything online with AI. Search, compare, and purchase across multiple stores via Synchronity.",
   "author": { "name": "Themewire", "url": "https://themewire.co" },
   "homepage": "https://synchronity.app",
-  "documentation": "https://api.synchronity.app/docs",
+  "documentation": "https://synchronity.app/docs",
   "support": "mailto:hello@themewire.co",
   "icon": "icon.png",
-  "privacy_policies": ["https://api.synchronity.app/privacy"],
+  "privacy_policies": ["https://synchronity.app/privacy-policy"],
   "server": {
     "type": "node",
     "entry_point": "server/index.js",
