@@ -60,6 +60,7 @@ function collectUrls(model: CardModel): string[] {
   if (model.kind === 'product') {
     if (model.image) urls.add(model.image);
     for (const u of model.images ?? []) urls.add(u);
+    for (const v of model.variants ?? []) if (v.image) urls.add(v.image);
   } else if (model.kind === 'productList') {
     for (const p of model.products) if (p.image) urls.add(p.image);
   }
@@ -91,6 +92,7 @@ export async function inlineCardImages<T extends CardModel>(model: T): Promise<T
   if (model.kind === 'product') {
     if (model.image && map.has(model.image)) model.image = map.get(model.image);
     if (model.images) model.images = model.images.map((u) => map.get(u) ?? u);
+    for (const v of model.variants ?? []) if (v.image && map.has(v.image)) v.image = map.get(v.image);
   } else if (model.kind === 'productList') {
     for (const p of model.products) if (p.image && map.has(p.image)) p.image = map.get(p.image);
   }

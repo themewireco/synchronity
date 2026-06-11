@@ -428,14 +428,6 @@ function getActiveCartId(siteId: string): string {
 function setActiveCartId(siteId: string, cartId: string): void {
   if (cartId) sessionStorage.setItem(`active_cart_${siteId}`, cartId);
 }
-/** Remember a site's display name (set on the product-list model) so later steps —
- *  e.g. the order-confirmation message — can show "at <Store>" instead of a raw UUID. */
-function setSiteName(siteId: string, name?: string): void {
-  if (name) sessionStorage.setItem(`site_name_${siteId}`, name);
-}
-function getSiteName(siteId: string): string {
-  return sessionStorage.getItem(`site_name_${siteId}`) || '';
-}
 /** Forget a site's cart — used when the gateway reports it no longer exists (a
  *  stale id left in sessionStorage by a previous conversation or an expiry). */
 function clearActiveCart(siteId: string): void {
@@ -521,7 +513,6 @@ function viewCartButton(siteId: string, ctx: ViewCtx): BagButton {
 /** Render a product-list card (search_products). */
 export function renderProductList(root: HTMLElement, model: ProductListCardModel, ctx: ViewCtx): void {
   root.replaceChildren();
-  setSiteName(model.siteId, model.siteName); // cache for later steps (e.g. order-confirmation message)
   const card = el('div', 'syn-card');
   if (model.products.length === 0) {
     card.appendChild(el('div', 'syn-listhead', 'No products matched that search.'));
@@ -1951,46 +1942,72 @@ function renderSuccessStep(
 
   const doneBtn = el('button', 'syn-btn syn-btn-primary', 'Done');
   doneBtn.style.marginTop = '20px';
-  doneBtn.onclick = () => {
+  doneBtn.onclick = async () => {
     const orderId = state.orderId;
     const siteId = state.siteId;
+    const token = state.delegationToken;
 
-    // Clear checkout state from sessionStorage
-    const stateKey = `checkout_state_${state.siteId}`;
-    sessionStorage.removeItem(stateKey);
+    sessionStorage.removeItem(`active_cart_${siteId}`); // checked out
 
-    // Clear active cart from sessionStorage since it's checked out
-    const sessionKey = `active_cart_${state.siteId}`;
-    sessionStorage.removeItem(sessionKey);
-
-    if (ctx.sendMessage && orderId) {
-      // Human-readable: show the store name, not the raw site UUID. The model still
-      // has the site_id in context from the checkout it just completed.
-      const storeName = getSiteName(siteId);
-      ctx.sendMessage(
-        storeName
-          ? `Please show the status of my order #${orderId} at ${storeName}.`
-          : `Please show the status of my order #${orderId}.`,
-      );
-    } else {
-      // Fallback
-      state.step = 'cart';
-      state.address = undefined;
-      state.checkoutModel = undefined;
-      state.selectedOptionId = undefined;
-      state.delegationEmail = undefined;
-      state.deviceCode = undefined;
-      state.delegationToken = undefined;
-      state.customerInfo = undefined;
-      state.orderId = undefined;
-      state.paymentMethod = undefined;
-      state.paymentSession = undefined;
-      saveState();
-      transitionTo('cart');
+    // Orders are buyer-private: only the View holds the buyer's delegation token
+    // (the agent never sees it — the HITL boundary). So fetch + show the order
+    // status IN-FRAME with that token, instead of asking the model (which has no
+    // token and would fail).
+    if (orderId && token) {
+      doneBtn.disabled = true;
+      doneBtn.textContent = 'Loading…';
+      try {
+        const res = await ctx.callTool('get_order', {
+          site_id: siteId,
+          order_id: orderId,
+          buyer_delegation_token: token,
+        });
+        if (res.isError) throw new Error(textOf(res) || 'Could not load order');
+        sessionStorage.removeItem(`checkout_state_${siteId}`);
+        renderOrderStatusPanel(root, res.structuredContent as Record<string, unknown> | undefined, orderId);
+        return;
+      } catch (err) {
+        doneBtn.disabled = false;
+        doneBtn.textContent = 'Done';
+        showButtonError(doneBtn, err);
+        return;
+      }
     }
+
+    // No token (shouldn't happen right after checkout) — acknowledge in-frame; do
+    // NOT punt a token-gated lookup to the model.
+    sessionStorage.removeItem(`checkout_state_${siteId}`);
+    renderOrderStatusPanel(root, undefined, orderId);
   };
   wrap.appendChild(doneBtn);
 
   card.appendChild(wrap);
+  root.appendChild(card);
+}
+
+/** Render a compact in-frame order-status panel (after Done fetches the order). */
+function renderOrderStatusPanel(root: HTMLElement, order: Record<string, unknown> | undefined, fallbackOrderId?: string): void {
+  root.replaceChildren();
+  const card = el('div', 'syn-card syn-card-product');
+  const body = el('div', 'syn-body');
+
+  const wrap = el('div', 'syn-success-wrap');
+  wrap.appendChild(el('div', 'syn-success-icon', '✓'));
+  wrap.appendChild(el('div', 'syn-title syn-display', 'Order Confirmed!'));
+
+  const orderId = (order?.order_id as string) ?? fallbackOrderId ?? '';
+  const status = (order?.status as string) ?? 'processing';
+  wrap.appendChild(el('div', 'syn-muted', `Order #${orderId} — ${status}`));
+
+  const total = order?.total as { amount?: string; currency?: string } | undefined;
+  if (total?.amount) {
+    const tot = el('div', 'syn-totline syn-totline-grand');
+    tot.style.marginTop = '12px';
+    tot.append(el('span', undefined, 'Total Paid'), el('span', 'syn-price', `${total.currency ?? ''} ${total.amount}`.trim()));
+    wrap.appendChild(tot);
+  }
+
+  body.appendChild(wrap);
+  card.appendChild(body);
   root.appendChild(card);
 }
