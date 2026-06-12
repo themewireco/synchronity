@@ -14,6 +14,7 @@ import type {
   CardAction,
 } from '../cards/types.js';
 import { deriveAxes, resolveVariant, isValueAvailable } from './variantMatrix.js';
+import { COUNTRIES, DIAL_CODES, dialCodeFor } from '../countries.js';
 
 /** Result shape returned by the host bridge for a tools/call. */
 export interface ToolCallResult {
@@ -67,6 +68,59 @@ const el = <K extends keyof HTMLElementTagNameMap>(
 
 function stockChip(inStock: boolean): HTMLElement {
   return el('span', `syn-chip ${inStock ? 'syn-in' : 'syn-out'}`, inStock ? 'In stock' : 'Out of stock');
+}
+
+/**
+ * Internationalized phone field: a dial-code prefix selector (all countries) plus
+ * a national-number input. getValue() returns an E.164 string ("+233201234567")
+ * or '' when empty. defaultCountry seeds the dial code; existing parses a saved
+ * E.164 value back into prefix + national number.
+ */
+function buildPhoneField(
+  defaultCountry: string,
+  existing?: string,
+): { row: HTMLElement; getValue: () => string } {
+  const row = el('div', 'syn-phone-row');
+
+  const dial = el('select', 'syn-form-select syn-phone-dial') as HTMLSelectElement;
+  for (const c of COUNTRIES) {
+    const code = DIAL_CODES[c.code];
+    if (!code) continue;
+    const opt = el('option', undefined, `${c.code} ${code}`) as HTMLOptionElement;
+    opt.value = c.code;
+    dial.appendChild(opt);
+  }
+
+  const num = el('input', 'syn-input syn-phone-num') as HTMLInputElement;
+  num.type = 'tel';
+  num.placeholder = 'Phone number';
+
+  // Seed from an existing E.164 value by matching the longest dial-code prefix.
+  let seededCountry = defaultCountry;
+  if (existing) {
+    const match = COUNTRIES
+      .map((c) => ({ c: c.code, d: DIAL_CODES[c.code] }))
+      .filter((x) => x.d && existing.startsWith(x.d))
+      .sort((a, b) => b.d!.length - a.d!.length)[0];
+    if (match) {
+      seededCountry = match.c;
+      num.value = existing.slice(match.d!.length);
+    } else {
+      num.value = existing.replace(/^\+/, '');
+    }
+  }
+  dial.value = DIAL_CODES[seededCountry] ? seededCountry : 'GH';
+
+  row.append(dial, num);
+
+  return {
+    row,
+    getValue: () => {
+      const national = num.value.replace(/[^\d]/g, '').replace(/^0+/, '');
+      if (!national) return '';
+      return `${dialCodeFor(dial.value)}${national}`;
+    },
+  };
 }
 
 function parsePrice(priceStr: string): { amount: number; prefix: string; suffix: string } {
@@ -912,6 +966,7 @@ export interface CheckoutState {
     state: string;
     postalCode: string;
     country: string;
+    phone?: string;
   };
   checkoutModel?: any;
   selectedOptionId?: string;
@@ -921,6 +976,7 @@ export interface CheckoutState {
   customerInfo?: {
     name: string;
     email: string;
+    phone: string;
     shippingName: string;
     shippingLine1: string;
   };
@@ -1137,15 +1193,26 @@ function renderShippingAddressStep(
 
   const groupCountry = el('div', 'syn-form-group');
   groupCountry.appendChild(el('label', 'syn-form-label', 'Country'));
-  const selectCountry = el('select', 'syn-form-select');
-  const optGH = el('option', undefined, 'Ghana'); optGH.value = 'GH';
-  const optUS = el('option', undefined, 'United States'); optUS.value = 'US';
-  const optGB = el('option', undefined, 'United Kingdom'); optGB.value = 'GB';
-  selectCountry.append(optGH, optUS, optGB);
+  const selectCountry = el('select', 'syn-form-select') as HTMLSelectElement;
+  for (const c of COUNTRIES) {
+    const opt = el('option', undefined, c.name) as HTMLOptionElement;
+    opt.value = c.code;
+    selectCountry.appendChild(opt);
+  }
   selectCountry.value = state.address?.country || 'GH';
   groupCountry.appendChild(selectCountry);
 
-  form.append(groupLine1, groupCity, row, groupCountry);
+  const groupPhone = el('div', 'syn-form-group');
+  groupPhone.appendChild(el('label', 'syn-form-label', 'Phone Number'));
+  const phoneField = buildPhoneField(state.address?.country || 'GH', state.address?.phone);
+  groupPhone.appendChild(phoneField.row);
+  // Keep the dial code in sync when the country selection changes.
+  selectCountry.addEventListener('change', () => {
+    const dialSel = phoneField.row.querySelector('select') as HTMLSelectElement | null;
+    if (dialSel && DIAL_CODES[selectCountry.value]) dialSel.value = selectCountry.value;
+  });
+
+  form.append(groupLine1, groupCity, row, groupCountry, groupPhone);
   card.appendChild(form);
 
   const footer = el('div', 'syn-checkout-footer');
@@ -1159,9 +1226,10 @@ function renderShippingAddressStep(
     const st = inputState.value.trim();
     const postal = inputPostal.value.trim();
     const line1 = inputLine1.value.trim();
+    const phone = phoneField.getValue();
 
-    if (!line1 || !city || !country) {
-      showButtonError(nextBtn, new Error('Please fill in Street Address, City, and Country.'));
+    if (!line1 || !city || !country || !phone) {
+      showButtonError(nextBtn, new Error('Please fill in Street Address, City, Country, and Phone Number.'));
       return;
     }
 
@@ -1169,7 +1237,7 @@ function renderShippingAddressStep(
     nextBtn.textContent = 'Calculating…';
 
     try {
-      state.address = { line1, city, state: st, postalCode: postal, country };
+      state.address = { line1, city, state: st, postalCode: postal, country, phone };
       saveState();
 
       const res = await ctx.callTool('set_shipping_address', {
@@ -1472,7 +1540,15 @@ function renderCustomerInfoStep(
   inputEmail.value = state.customerInfo?.email || state.delegationEmail || '';
   groupEmail.appendChild(inputEmail);
 
-  form.append(groupName, groupEmail);
+  const groupPhone = el('div', 'syn-form-group');
+  groupPhone.appendChild(el('label', 'syn-form-label', 'Phone Number'));
+  const phoneField = buildPhoneField(
+    state.address?.country || 'GH',
+    state.customerInfo?.phone || state.address?.phone,
+  );
+  groupPhone.appendChild(phoneField.row);
+
+  form.append(groupName, groupEmail, groupPhone);
 
   const selectedOption = state.checkoutModel?.shippingOptions?.find((o: any) => o.optionId === state.selectedOptionId);
   const selectedLabel = selectedOption?.label || '';
@@ -1509,11 +1585,12 @@ function renderCustomerInfoStep(
   nextBtn.onclick = async () => {
     const name = inputName.value.trim();
     const email = inputEmail.value.trim();
+    const phone = phoneField.getValue();
     const sName = isPickup ? name : inputShipName.value.trim();
     const sLine1 = isPickup ? 'Local Pickup' : inputShipLine1.value.trim();
 
-    if (!name || !email || !sName || !sLine1) {
-      showButtonError(nextBtn, new Error('Please fill in all details.'));
+    if (!name || !email || !phone || !sName || !sLine1) {
+      showButtonError(nextBtn, new Error('Please fill in all details, including phone number.'));
       return;
     }
 
@@ -1521,7 +1598,7 @@ function renderCustomerInfoStep(
     nextBtn.textContent = 'Placing Order…';
 
     try {
-      state.customerInfo = { name, email, shippingName: sName, shippingLine1: sLine1 };
+      state.customerInfo = { name, email, phone, shippingName: sName, shippingLine1: sLine1 };
       saveState();
 
       const res = await ctx.callTool('execute_checkout', {
@@ -1530,12 +1607,14 @@ function renderCustomerInfoStep(
         buyer_delegation_token: state.delegationToken,
         customer_name: name,
         customer_email: email,
+        customer_phone: phone,
         shipping_name: sName,
         shipping_line1: sLine1,
         shipping_city: state.address?.city || 'Accra',
         shipping_state: state.address?.state || 'Greater Accra',
         shipping_postal_code: state.address?.postalCode || '00233',
         shipping_country: state.address?.country || 'GH',
+        shipping_phone: state.address?.phone || phone,
       });
 
       if (res.isError) throw new Error(textOf(res) || 'Checkout failed');

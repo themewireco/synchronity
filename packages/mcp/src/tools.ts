@@ -229,6 +229,7 @@ export const executeCheckout: ToolImplementation = async (client, args) => {
     buyer_delegation_token,
     customer_name,
     customer_email,
+    customer_phone,
     shipping_name,
     shipping_line1,
     shipping_line2,
@@ -236,6 +237,7 @@ export const executeCheckout: ToolImplementation = async (client, args) => {
     shipping_state,
     shipping_postal_code,
     shipping_country,
+    shipping_phone,
     notes,
   } = args;
 
@@ -245,6 +247,7 @@ export const executeCheckout: ToolImplementation = async (client, args) => {
     'buyer_delegation_token',
     'customer_name',
     'customer_email',
+    'customer_phone',
     'shipping_name',
     'shipping_line1',
     'shipping_city',
@@ -263,6 +266,7 @@ export const executeCheckout: ToolImplementation = async (client, args) => {
     buyer_delegation_token: buyer_delegation_token as string,
     customer_name: customer_name as string,
     customer_email: customer_email as string,
+    customer_phone: customer_phone as string | undefined,
     notes: notes as string | undefined,
     shipping_address: {
       name: shipping_name as string,
@@ -272,6 +276,7 @@ export const executeCheckout: ToolImplementation = async (client, args) => {
       state: shipping_state as string,
       postal_code: shipping_postal_code as string,
       country: shipping_country as string,
+      phone: (shipping_phone ?? customer_phone) as string | undefined,
     },
   });
 

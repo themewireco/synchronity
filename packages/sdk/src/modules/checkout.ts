@@ -9,6 +9,7 @@ export interface ShippingAddressParams {
   state: string;
   postal_code: string;
   country: string;
+  phone?: string;
 }
 
 export interface CheckoutParams {
@@ -17,6 +18,7 @@ export interface CheckoutParams {
   shipping_address: ShippingAddressParams;
   customer_name?: string;
   customer_email?: string;
+  customer_phone?: string;
   notes?: string;
 }
 
@@ -38,6 +40,9 @@ export class CheckoutModule {
     if (params.shipping_address.line2 !== undefined) {
       address.line2 = params.shipping_address.line2;
     }
+    if (params.shipping_address.phone !== undefined) {
+      address.phone = params.shipping_address.phone;
+    }
 
     return this.http.post<AMPSOrder>(`/v1/sites/${siteId}/checkout`, {
       cart_id: params.cart_id,
@@ -45,6 +50,7 @@ export class CheckoutModule {
       shipping_address: address,
       ...(params.customer_name && { customer_name: params.customer_name }),
       ...(params.customer_email && { customer_email: params.customer_email }),
+      ...(params.customer_phone && { customer_phone: params.customer_phone }),
       ...(params.notes && { notes: params.notes }),
     });
   }

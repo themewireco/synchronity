@@ -143,6 +143,9 @@ body {
 .syn-form-label { font-size: 13px; font-weight: 600; color: var(--syn-ink); }
 .syn-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .syn-form-select { border: 1px solid var(--syn-border); border-radius: 12px; padding: 8px 12px; font: inherit; background: #fff; width: 100%; cursor: pointer; }
+.syn-phone-row { display: grid; grid-template-columns: 110px 1fr; gap: 8px; }
+.syn-phone-dial { min-width: 0; }
+.syn-phone-num { min-width: 0; }
 
 /* Radio cards */
 .syn-radio-card {
