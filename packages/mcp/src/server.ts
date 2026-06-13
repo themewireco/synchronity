@@ -17,6 +17,7 @@ import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { Synchronity } from '@synchronity/sdk';
 import { getConfig } from './config.js';
 import { getToolImplementation } from './tools.js';
+import { COUNTRY_CODES } from './countries.js';
 import type { MCPContent } from './types.js';
 import type { CardToolResult } from './cards/types.js';
 import { listUiResources, readUiResource } from './cards/resources.js';
@@ -202,7 +203,7 @@ const TOOL_DEFINITIONS: Tool[] = [
       properties: {
         site_id: { type: 'string', description: 'Registered site ID' },
         cart_id: { type: 'string', description: 'Cart ID' },
-        country_code: { type: 'string', description: 'ISO-3166 alpha-2 country code (e.g. US)' },
+        country_code: { type: 'string', enum: COUNTRY_CODES, description: 'ISO-3166 alpha-2 country code (e.g. US)' },
         postal_code: { type: 'string', description: 'Postal/ZIP code for accurate rates' },
         state: { type: 'string', description: 'State/province/region code where carriers need it' },
         city: { type: 'string', description: 'City' },
@@ -237,13 +238,15 @@ const TOOL_DEFINITIONS: Tool[] = [
         buyer_delegation_token: { type: 'string', description: 'Delegation token from buyer (OAuth-like flow)' },
         customer_name: { type: 'string', description: 'Full name of the customer placing the order' },
         customer_email: { type: 'string', description: 'Email address of the customer placing the order' },
+        customer_phone: { type: 'string', description: 'Customer contact / billing phone number (E.164 preferred, e.g. +233201234567)' },
         shipping_name: { type: 'string', description: 'Recipient full name' },
         shipping_line1: { type: 'string', description: 'Shipping address line 1 (street)' },
         shipping_line2: { type: 'string', description: 'Shipping address line 2 (apt/suite) [optional]' },
         shipping_city: { type: 'string', description: 'Shipping city' },
         shipping_state: { type: 'string', description: 'Shipping state or province' },
         shipping_postal_code: { type: 'string', description: 'Shipping postal code' },
-        shipping_country: { type: 'string', description: 'ISO 3166-1 alpha-2 country code (e.g., "US", "GB")' },
+        shipping_country: { type: 'string', enum: COUNTRY_CODES, description: 'ISO 3166-1 alpha-2 country code (e.g., "US", "GB")' },
+        shipping_phone: { type: 'string', description: 'Recipient phone for the shipping address (E.164 preferred); defaults to customer_phone if omitted' },
         notes: { type: 'string', description: 'Optional order notes' },
       },
       required: [
@@ -252,6 +255,7 @@ const TOOL_DEFINITIONS: Tool[] = [
         'buyer_delegation_token',
         'customer_name',
         'customer_email',
+        'customer_phone',
         'shipping_name',
         'shipping_line1',
         'shipping_city',

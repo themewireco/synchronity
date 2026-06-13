@@ -158,6 +158,8 @@ export interface AMPSAddress {
   postal_code?: string;
   /** ISO 3166-1 alpha-2 country code */
   country_code: string;
+  /** Contact phone for this address (E.164 preferred) */
+  phone?: string;
 }
 
 export interface AMPSOrderItem {
