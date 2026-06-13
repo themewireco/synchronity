@@ -1,6 +1,6 @@
 {
   "name": "@synchronity/mcp-server",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Synchronity MCP Server - Exposes all 11 Synchronity tools as Model Context Protocol endpoints for Claude, ChatGPT, and other LLM agents",
   "type": "module",
   "main": "./dist/index.cjs",
