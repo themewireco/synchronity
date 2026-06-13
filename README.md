@@ -83,7 +83,7 @@ New here or reviewing the connector? Follow the end-to-end walkthrough: [docs/re
 
 ## Privacy & support
 
-- Privacy Policy: [PRIVACY.md](PRIVACY.md) · at [synchronity.app/privacy](https://synchronity.app/privacy)
+- Privacy Policy: [PRIVACY.md](PRIVACY.md) · at [synchronity.app/privacy-policy](https://synchronity.app/privacy-policy)
 - Support: hello@themewire.co
 
 ## License
