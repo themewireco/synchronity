@@ -41,12 +41,12 @@ const TOOL_DEFINITIONS: Tool[] = [
     annotations: { title: 'Search products', readOnlyHint: true, destructiveHint: false },
     _meta: { ui: { resourceUri: 'ui://synchronity/product-list' } },
     description:
-      'Search for products on a registered e-commerce site by query, category, price range, or availability. Returns paginated product listings as an interactive card. IMPORTANT: call this ONCE with your single best query and present the returned card to the user — do NOT fire multiple back-to-back searches with reworded queries. If the first search is empty or off-target, ask the user to clarify rather than guessing repeatedly; each call renders its own card, so repeated calls clutter the conversation. The card already shows the products with prices, IDs, and Add-to-cart controls, so keep your text reply to one brief sentence — do NOT re-list the products, prices, or IDs the card already displays.',
+      'Find products on a registered store. To BROWSE a store\'s catalog (open-ended requests like "what do they sell", "show me what\'s available"), call with NO query — this returns the store\'s products. To SEARCH, pass `query` (a product name/keyword). Returns paginated products as an interactive card. Call once with your best intent (browse OR a single query); if a real search is genuinely empty, ask the user to clarify rather than re-firing reworded queries. The card shows products, prices, IDs, and Add-to-cart controls — keep your text reply to one brief sentence and do not re-list what the card shows.',
     inputSchema: {
       type: 'object',
       properties: {
         site_id: { type: 'string', description: 'Registered site ID (e.g., "site_abc123" or "shopify_store_1")' },
-        query: { type: 'string', description: 'Search query (product name, SKU, description keyword, etc.)' },
+        query: { type: 'string', description: 'Optional search term (product name/keyword). OMIT to browse the store\'s full catalog.' },
         category: { type: 'string', description: 'Filter by product category (optional)' },
         min_price: {
           type: 'string',
@@ -510,9 +510,17 @@ export function createMCPServer(config: {
   // Mutable runtime state — ensureValidToken() mutates .ait when refreshed
   const runtime = { ait: config.ait, gatewayUrl: config.gatewayUrl, debug: config.debug };
 
+  const SERVER_INSTRUCTIONS = [
+    'Synchronity lets you shop across the user\'s connected e-commerce stores and complete real purchases on their behalf.',
+    'WHEN TO USE: invoke these tools whenever the user wants to shop, browse a store, find/compare products, build a cart, or buy/check out — even if they don\'t name "Synchronity". You do not need explicit permission to call the tools for discovery (listing stores, browsing, searching); just use them.',
+    'GETTING STARTED: call list_sites first to find the store + its site_id (every other tool needs site_id).',
+    'BROWSING vs SEARCHING: to show what a store carries (open-ended "what do they have", "show me the catalog"), call search_products with NO query — that returns the store\'s catalog. Only pass a query for a specific search (a product name/keyword). Do not invent a query for an open-ended browse request.',
+    'CHECKOUT: checkout + payment require the buyer\'s explicit approval (a one-time emailed code). Never claim a purchase succeeded until payment status is paid or the order is processing/completed.',
+  ].join('\n');
+
   const server = new Server(
     { name: 'synchronity-mcp', version: '0.2.0' },
-    { capabilities: { tools: {}, resources: {} } },
+    { capabilities: { tools: {}, resources: {} }, instructions: SERVER_INSTRUCTIONS },
   );
 
   server.setRequestHandler(ListToolsRequestSchema, () => ({
@@ -610,3 +618,4 @@ export async function startServer() {
     throw new Error('HTTP mode is not yet implemented via startServer(); use createMCPServer() directly.');
   }
 }
+
