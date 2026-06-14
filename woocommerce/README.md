@@ -98,7 +98,7 @@ The resolved modifier is per-unit: `unit_price = base + Σ modifiers`, `line_tot
 ## Register with the gateway
 
 ```bash
-curl -X POST https://agentmesh-production.up.railway.app/v1/register-site \
+curl -X POST https://api.synchronity.app/v1/register-site \
   -H "Authorization: Bearer <admin-token>" \
   -H "Content-Type: application/json" \
   -d '{

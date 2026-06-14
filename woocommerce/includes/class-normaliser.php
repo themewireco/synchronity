@@ -168,6 +168,8 @@ class AgentMesh_Normaliser {
 				'state'        => $ship['state'] ?: null,
 				'postal_code'  => $ship['postcode'] ?: null,
 				'country_code' => strtoupper( $ship['country'] ),
+				// WC shipping addresses carry no phone; surface the billing phone.
+				'phone'        => $order->get_billing_phone() ?: null,
 			];
 			// Drop null fields to keep response clean
 			$shipping_address = array_filter( $shipping_address, fn( $v ) => null !== $v );
@@ -315,7 +317,7 @@ class AgentMesh_Normaliser {
 			'postcode'   => $amps_address['postal_code'] ?? '',
 			'country'    => strtoupper( $amps_address['country_code'] ?? '' ),
 			'email'      => '',
-			'phone'      => '',
+			'phone'      => $amps_address['phone'] ?? '',
 		];
 	}
 

@@ -15,6 +15,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { injectStyles } from './styles.js';
 import { renderProduct, renderProductList, renderCart, type ViewCtx } from './render.js';
 import type { CardModel } from '../cards/types.js';
+import { isOpenAiHost, bootOpenAi } from './host-openai.js';
 
 function getRoot(): HTMLElement {
   let root = document.getElementById('syn-root');
@@ -24,6 +25,13 @@ function getRoot(): HTMLElement {
     document.body.appendChild(root);
   }
   return root;
+}
+
+/** Paint a CardModel into the root via the matching renderer (host-agnostic). */
+function renderModel(root: HTMLElement, model: CardModel, ctx: ViewCtx): void {
+  if (model.kind === 'productList') renderProductList(root, model, ctx);
+  else if (model.kind === 'product') renderProduct(root, model, ctx);
+  else if (model.kind === 'cart') renderCart(root, model, ctx);
 }
 
 function applyHostTheme(app: App): void {
@@ -41,16 +49,21 @@ function applyHostTheme(app: App): void {
 function dispatch(root: HTMLElement, ctx: ViewCtx, result: CallToolResult): void {
   const model = result.structuredContent as CardModel | undefined;
   if (!model || typeof model !== 'object') return;
-  if (model.kind === 'productList') renderProductList(root, model, ctx);
-  else if (model.kind === 'product') renderProduct(root, model, ctx);
-  else if (model.kind === 'cart') renderCart(root, model, ctx);
+  renderModel(root, model, ctx);
 }
 
-/** Start a View. Idempotent per document. */
+/** Start a View. Idempotent per document. Detects the host (ChatGPT/Codex vs Claude). */
 export async function boot(): Promise<void> {
   injectStyles();
   const root = getRoot();
 
+  // ChatGPT / Codex: drive the same renderers over the window.openai bridge.
+  if (isOpenAiHost()) {
+    bootOpenAi(root, (model, ctx) => renderModel(root, model, ctx));
+    return;
+  }
+
+  // Claude / MCP Apps host (unchanged).
   const app = new App({ name: 'synchronity-view', version: '0.1.0' });
   const ctx: ViewCtx = {
     callTool: (name, args) => app.callServerTool({ name, arguments: args }),

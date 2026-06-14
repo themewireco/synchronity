@@ -74,6 +74,12 @@ function lines(cart: any, siteId: string): CartLine[] {
       toolName: 'remove_from_cart',
       params: { site_id: siteId, cart_id: cart.cart_id, item_id: it.item_id },
     },
+    setQtyAction: {
+      label: 'Update quantity',
+      toolName: 'set_cart_quantity',
+      // The View supplies the new `quantity` arg at click time.
+      params: { site_id: siteId, cart_id: cart.cart_id, item_id: it.item_id },
+    },
   }));
 }
 

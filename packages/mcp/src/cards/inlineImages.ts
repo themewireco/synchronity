@@ -15,11 +15,14 @@
 
 import type { CardModel } from './types.js';
 
-const THUMB_PX = 240;                  // resized thumbnail edge
+const THUMB_PX = 200;                  // resized thumbnail edge (smaller = more fit the budget)
 const PER_IMAGE_MAX_BYTES = 120 * 1024; // skip a thumb if somehow larger than ~120KB
-const TOTAL_BUDGET_BYTES = 700 * 1024;  // hard cap on summed inlined bytes (<1MB result limit)
+const TOTAL_BUDGET_BYTES = 850 * 1024;  // hard cap on summed inlined bytes (<1MB result limit)
 const PER_IMAGE_TIMEOUT_MS = 6000;
-const MAX_IMAGES = 16;                  // cap fetch fan-out so big lists don't stall the tool call
+// Cap fetch fan-out so big lists don't stall the tool call. Covers a full default
+// catalog page (search_products per_page = 20) so every row's image inlines on
+// Claude; the byte budget above is the real limiter for very large pages.
+const MAX_IMAGES = 30;
 
 /** Whether image inlining is enabled (env flag). */
 export function inlineImagesEnabled(): boolean {

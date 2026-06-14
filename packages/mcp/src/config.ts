@@ -8,7 +8,7 @@ import { join } from 'path';
 
 export interface MCPServerConfig {
   /**
-   * Synchronity Gateway URL (e.g., "https://api.agentmesh.com")
+   * Synchronity Gateway URL (e.g., "https://api.synchronity.app")
    * Defaults to GATEWAY_URL environment variable
    */
   gatewayUrl?: string;
@@ -184,7 +184,7 @@ async function autoRegister(gatewayUrl: string): Promise<string> {
  * 4. Fall back to auto-register
  */
 export async function getConfig(overrides?: Partial<MCPServerConfig>): Promise<MCPServerConfig> {
-  const gatewayUrl = (process.env.GATEWAY_URL || 'http://localhost:3000').replace(/\/$/, '');
+  const gatewayUrl = (process.env.GATEWAY_URL || 'https://api.synchronity.app').replace(/\/$/, '');
   
   let ait = process.env.AIT;
 
