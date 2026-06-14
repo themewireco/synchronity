@@ -75,6 +75,8 @@ export interface CartLine {
   variantTitle?: string;   // selected variant label, when applicable
   addonsSummary?: string;  // human-readable selected-addons summary, e.g. "Engraving: Gold"
   removeAction?: CardAction;
+  /** Set-quantity action; the View supplies the new `quantity` arg at click time. */
+  setQtyAction?: CardAction;
 }
 
 export interface CartCardModel {

@@ -3,10 +3,10 @@
  * Synchronity MCP Server
  *
  * Main entry point for the MCP server.
- * Run with: agentmesh-mcp or node dist/index.js
+ * Run with: synchronity-mcp or node dist/index.js
  *
  * Environment Variables:
- *   GATEWAY_URL - Synchronity Gateway URL (default: https://api.agentmesh.com)
+ *   GATEWAY_URL - Synchronity Gateway URL (default: https://api.synchronity.app)
  *   AIT - Agent Integration Token (required)
  *   DEBUG - Enable debug logging (set to "true")
  */

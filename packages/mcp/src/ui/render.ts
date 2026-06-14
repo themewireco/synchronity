@@ -71,6 +71,22 @@ function stockChip(inStock: boolean): HTMLElement {
 }
 
 /**
+ * Point a thumbnail <img> at a URL with a graceful fallback. Empty/missing or a
+ * load failure (e.g. a remote image the Claude sandbox blocks — only data: URIs
+ * render there) collapses to a clean tinted box instead of a broken-image icon.
+ */
+function setThumb(img: HTMLImageElement, url: string | undefined, alt: string): void {
+  img.alt = alt;
+  if (!url) { img.classList.add('syn-thumb-empty'); return; }
+  img.src = url;
+  img.onerror = () => {
+    img.removeAttribute('src');
+    img.classList.add('syn-thumb-empty');
+    img.onerror = null;
+  };
+}
+
+/**
  * Internationalized phone field: a dial-code prefix selector (all countries) plus
  * a national-number input. getValue() returns an E.164 string ("+233201234567")
  * or '' when empty. defaultCountry seeds the dial code; existing parses a saved
@@ -142,6 +158,7 @@ function parsePrice(priceStr: string): { amount: number; prefix: string; suffix:
 
 function formatPriceLike(amount: number, template: { prefix: string; suffix: string }): string {
   const cleanPrefix = template.prefix.replace(/^[+-]\s*/, '');
+  if (!Number.isFinite(amount)) amount = 0; // never render "NaN"
   const formatted = amount.toLocaleString('en-US', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
@@ -156,21 +173,26 @@ function getModifierValue(modStr?: string): number {
 }
 
 /** Quantity stepper. Returns the element plus a live getter for the current value. */
-function qtyStepper(onChange?: (qty: number) => void): { node: HTMLElement; get: () => number } {
-  let qty = 1;
+function qtyStepper(
+  onChange?: (qty: number) => void,
+  opts?: { start?: number; min?: number; disabled?: boolean },
+): { node: HTMLElement; get: () => number } {
+  const min = opts?.min ?? 1;
+  let qty = opts?.start ?? 1;
   const wrap = el('div', 'syn-qty');
   const minus = el('button', undefined, '−'); // −
-  const val = el('span', undefined, '1');
+  const val = el('span', undefined, String(qty));
   const plus = el('button', undefined, '+');
   minus.type = 'button'; plus.type = 'button';
   minus.setAttribute('aria-label', 'Decrease quantity');
   plus.setAttribute('aria-label', 'Increase quantity');
   const sync = () => {
     val.textContent = String(qty);
-    minus.disabled = qty <= 1;
+    minus.disabled = !!opts?.disabled || qty <= min;
+    plus.disabled = !!opts?.disabled;
     onChange?.(qty);
   };
-  minus.onclick = () => { if (qty > 1) { qty--; sync(); } };
+  minus.onclick = () => { if (qty > min) { qty--; sync(); } };
   plus.onclick = () => { qty++; sync(); };
   sync();
   wrap.append(minus, val, plus);
@@ -385,6 +407,9 @@ function addToCartButton(
       if (sc?.cartId) setActiveCartId(siteId, sc.cartId);
       setLabel('Added ✓');
       setCartCount(siteId, sc?.items);
+      // Repaint every shopping bag on the page so the badge updates immediately
+      // (the wizard/list/product bags are separate instances).
+      for (const b of document.querySelectorAll('.syn-bag')) (b as BagButton).repaint?.();
       // Silently tell the model what's in the cart (don't switch to cart view —
       // the buyer is still browsing and may add more products).
       const summary = cartSummary(res);
@@ -399,16 +424,24 @@ function addToCartButton(
   return btn;
 }
 
-/** Show a transient line of text beside a button (Desktop has no console for the iframe). */
-function showButtonNote(btn: HTMLElement, msg: string): void {
-  const host = btn.parentElement ?? btn;
-  let line = host.querySelector(':scope > .syn-err') as HTMLElement | null;
-  if (!line) {
-    line = el('div', 'syn-err');
-    host.appendChild(line);
+/**
+ * Show a transient toast (Desktop has no console for the iframe). Floats at the
+ * bottom of the view instead of injecting inline next to the button, so it never
+ * reflows the card. `btn` is kept for call-site compatibility (unused for layout).
+ */
+function showButtonNote(_btn: HTMLElement, msg: string): void {
+  let host = document.getElementById('syn-toasts');
+  if (!host) {
+    host = el('div', 'syn-toasts');
+    host.id = 'syn-toasts';
+    document.body.appendChild(host);
   }
-  line.textContent = msg.slice(0, 160);
-  setTimeout(() => { line?.remove(); }, 6000);
+  const toast = el('div', 'syn-toast');
+  toast.textContent = msg.slice(0, 200);
+  host.appendChild(toast);
+  // Fade out then remove.
+  setTimeout(() => { toast.classList.add('syn-toast-out'); }, 4200);
+  setTimeout(() => { toast.remove(); }, 4800);
 }
 
 /** Surface a tool-call error visibly next to a button (and to the console). */
@@ -515,16 +548,35 @@ async function ensureCart(siteId: string, ctx: ViewCtx): Promise<string> {
 
 type BagButton = HTMLButtonElement & { repaint: () => void };
 
-/** Shopping-bag button (icon + item-count badge) that opens the cart in-place. */
+/** Shopping-basket glyph matching the Figma (outline basket in a white circle). */
+const BASKET_SVG =
+  '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+  '<path d="M5.5 10h13l-1.1 7.2a2 2 0 0 1-2 1.8H8.6a2 2 0 0 1-2-1.8L5.5 10Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>' +
+  '<path d="M9 10 11.2 4.8a1 1 0 0 1 1.8 0L15 10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>' +
+  '<path d="M3.5 10h17" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>' +
+  '<path d="M10 13.2v2.4M14 13.2v2.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+
+/** Trash/delete glyph for cart line removal (matches the Figma red trash icon). */
+const TRASH_SVG =
+  '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+  '<path d="M4 7h16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>' +
+  '<path d="M9.5 7V5.5a1.5 1.5 0 0 1 1.5-1.5h2a1.5 1.5 0 0 1 1.5 1.5V7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>' +
+  '<path d="M6 7l.8 11a2 2 0 0 0 2 1.9h6.4a2 2 0 0 0 2-1.9L18 7" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>' +
+  '<path d="M10 11v5M14 11v5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
+
+/** Shopping-basket button (icon + item-count badge) that opens the cart in-place. */
 function viewCartButton(siteId: string, ctx: ViewCtx): BagButton {
-  const btn = el('button', 'syn-btn syn-btn-ghost syn-bag') as BagButton;
+  const btn = el('button', 'syn-bag') as BagButton;
   btn.type = 'button';
+  btn.setAttribute('aria-label', 'View cart');
   const paint = () => {
     const c = cartCount(siteId);
     btn.replaceChildren();
-    btn.appendChild(el('span', 'syn-bag-icon', '🛍'));
-    if (c > 0) btn.appendChild(el('span', 'syn-bag-count', String(c)));
-    else btn.appendChild(el('span', undefined, 'Cart'));
+    const icon = el('span', 'syn-bag-icon');
+    icon.innerHTML = BASKET_SVG;
+    btn.appendChild(icon);
+    // The Figma always shows the count badge (incl. 0).
+    btn.appendChild(el('span', 'syn-bag-count', String(c)));
   };
   btn.repaint = paint;
   paint();
@@ -567,24 +619,6 @@ function viewCartButton(siteId: string, ctx: ViewCtx): BagButton {
 /** Render a product-list card (search_products). */
 export function renderProductList(root: HTMLElement, model: ProductListCardModel, ctx: ViewCtx): void {
   root.replaceChildren();
-  const card = el('div', 'syn-card');
-  if (model.products.length === 0) {
-    card.appendChild(el('div', 'syn-listhead', 'No products matched that search.'));
-    root.appendChild(card);
-    return;
-  }
-  
-  const header = el('div', 'syn-listhead');
-  header.style.display = 'flex';
-  header.style.justifyContent = 'space-between';
-  header.style.alignItems = 'center';
-  
-  const titleSpan = el('span', undefined, `${model.products.length} product${model.products.length === 1 ? '' : 's'}${model.siteName ? ` at ${model.siteName}` : ''}`);
-  header.appendChild(titleSpan);
-  
-  const cartBtnContainer = el('span');
-  header.appendChild(cartBtnContainer);
-  card.appendChild(header);
 
   // Seed the active cart from any server-prefilled param so the bag opens it on first click.
   for (const p of model.products) {
@@ -592,64 +626,79 @@ export function renderProductList(root: HTMLElement, model: ProductListCardModel
     if (pid) { setActiveCartId(model.siteId, pid); break; }
   }
 
-  // One bag for the whole list; adds repaint it (count + newly-known cart id).
+  // Header bar: "{n} product at {store}" left, basket button right.
+  const headerBar = el('div', 'syn-listhead-bar');
+  const n = model.products.length;
+  headerBar.appendChild(
+    el('span', 'syn-listhead-title', `${n} product${n === 1 ? '' : 's'}${model.siteName ? ` at ${model.siteName}` : ''}`),
+  );
   const bag = viewCartButton(model.siteId, ctx);
-  cartBtnContainer.appendChild(bag);
+  headerBar.appendChild(bag);
+  root.appendChild(headerBar);
+
+  const card = el('div', 'syn-card');
+  if (n === 0) {
+    card.appendChild(el('div', 'syn-listempty', 'No products matched that search.'));
+    root.appendChild(card);
+    return;
+  }
 
   const list = el('div', 'syn-list');
-
   for (const p of model.products) {
     const row = el('div', 'syn-row');
     const thumb = el('img', 'syn-thumb');
-    thumb.src = p.image ?? '';
-    thumb.alt = p.title;
+    setThumb(thumb, p.image, p.title);
     thumb.loading = 'lazy';
+
     const body = el('div', 'syn-rowbody');
-    body.appendChild(el('div', 'syn-rowtitle', p.title));
-    const meta = el('div', 'syn-rowmeta');
-    meta.appendChild(el('span', 'syn-price', p.price));
-    meta.appendChild(stockChip(p.inStock));
-    body.appendChild(meta);
+    const titleLine = el('div', 'syn-rowtitle-line');
+    titleLine.append(el('span', 'syn-rowtitle', p.title), stockChip(p.inStock));
+    body.append(titleLine, el('div', 'syn-price', p.price));
 
     const actions = el('div', 'syn-rowactions');
-    if (p.hasOptions) {
-      const selectBtn = el('button', 'syn-btn syn-btn-primary syn-btn-sm', 'Select options') as HTMLButtonElement;
-      selectBtn.type = 'button';
-      selectBtn.disabled = !p.inStock;
-      selectBtn.onclick = async () => {
-        selectBtn.disabled = true;
-        const original = selectBtn.textContent;
-        selectBtn.textContent = '…';
+    if (!p.inStock) {
+      // Out of stock: a disabled 0-stepper + a live "Notify me" (matches Figma).
+      const qty = qtyStepper(undefined, { start: 0, min: 0, disabled: true });
+      const notify = el('button', 'syn-btn syn-btn-primary', 'Notify me') as HTMLButtonElement;
+      notify.type = 'button';
+      notify.onclick = () => {
+        ctx.sendMessage?.(`Please notify me when "${p.title}" is back in stock.`);
+        showButtonNote(notify, "We'll let you know.");
+      };
+      actions.append(qty.node, notify);
+    } else if (p.hasOptions) {
+      // Options/variations → open the Customize wizard. Stepper shown for parity
+      // with the simple rows; final quantity is confirmed in the wizard's review step.
+      const qty = qtyStepper();
+      const btn = el('button', 'syn-btn syn-btn-primary', 'Add to cart') as HTMLButtonElement;
+      btn.type = 'button';
+      btn.onclick = async () => {
+        btn.disabled = true;
+        const original = btn.textContent;
+        btn.textContent = '…';
         try {
           const res = await ctx.callTool('get_product', {
             site_id: (p.addToCart.params.site_id as string),
             product_id: p.productId,
           });
           if (res.isError) throw new Error(textOf(res) || 'Could not load options');
-          ctx.onResult?.(res); // renders the single-product card (with wizard) in-frame
+          ctx.onResult?.(res); // renders the customize wizard in-frame
         } catch (err) {
-          selectBtn.disabled = false;
-          selectBtn.textContent = original;
-          showButtonError(selectBtn, err);
+          btn.disabled = false;
+          btn.textContent = original;
+          showButtonError(btn, err);
         }
       };
-      actions.append(selectBtn);
+      actions.append(qty.node, btn);
     } else {
-      // existing inline qty + Add-to-cart path (unchanged)
       const qty = qtyStepper();
-      const btn = addToCartButton(
-        p.addToCart, ctx,
-        () => ({ quantity: qty.get(), missing: [] }),
-        'sm',
-      );
-      btn.disabled = !p.inStock;
-
+      const btn = addToCartButton(p.addToCart, ctx, () => ({ quantity: qty.get(), missing: [] }));
+      btn.textContent = 'Add to cart';
       const originalOnclick = btn.onclick;
       btn.onclick = async (e) => {
         await (originalOnclick as ((this: HTMLButtonElement, ev: PointerEvent) => unknown) | null)?.call(btn, e);
         bag.repaint(); // count grew; the cart id is now known to the shared bag
       };
-
       actions.append(qty.node, btn);
     }
 
@@ -713,243 +762,376 @@ export function renderProduct(root: HTMLElement, model: ProductCardModel, ctx: V
     clearInterval((root as any)._cartPollInterval);
     (root as any)._cartPollInterval = null;
   }
-  const card = el('div', 'syn-card syn-card-product');
-  const heroImg = buildHero(card, model);
 
-  const body = el('div', 'syn-body');
-  const head = el('div');
-  head.appendChild(el('div', 'syn-title syn-display', model.title));
-  if (model.description) {
-    head.appendChild(el('div', 'syn-muted syn-desc', model.description));
-  }
-  body.appendChild(head);
-
-  // Cart-id session tracking + an always-visible shopping bag (reads the live cart
-  // at click time, mirroring renderProductList — so the buyer can always reach the
-  // cart/checkout, including right after the first add).
   const sessionKey = `active_cart_${model.siteId}`;
-  let currentCartId = sessionStorage.getItem(sessionKey) || (model.addToCart.params.cart_id as string) || '';
-  // The bag floats over the hero (on the card, NOT in the body) so it survives the
-  // options wizard re-rendering the body — the buyer can reach the cart from any step.
-  const cartBtnContainer = el('span', 'syn-prodbag');
-  const bag = viewCartButton(model.siteId, ctx);
-  cartBtnContainer.appendChild(bag);
-  card.appendChild(cartBtnContainer);
+  const seedCartId = sessionStorage.getItem(sessionKey) || (model.addToCart.params.cart_id as string) || '';
+  if (seedCartId) {
+    sessionStorage.setItem(sessionKey, seedCartId);
+    model.addToCart.params.cart_id = seedCartId;
+  }
   const updateCartId = (cId?: string) => {
     if (!cId) return;
-    currentCartId = cId;
     sessionStorage.setItem(sessionKey, cId);
     model.addToCart.params.cart_id = cId;
-    bag.repaint();
   };
-  if (currentCartId) updateCartId(currentCartId);
 
   if (needsOptionsWizard(model)) {
-    // Products with variants / multiple / required options open a stepped wizard.
-    const footer = el('div', 'syn-footer');
-    const priceblk = el('div', 'syn-priceblk');
-    priceblk.appendChild(el('span', 'syn-price', model.price));
-    priceblk.appendChild(stockChip(model.inStock));
-    footer.appendChild(priceblk);
+    // Options/variations → the Customize wizard (Figma: Customize Your Brew → Review).
+    renderOptionsWizard(root, model, ctx, updateCartId);
+    return;
+  }
 
-    const right = el('div', 'syn-rowactions');
-    const selectBtn = el('button', 'syn-btn syn-btn-primary', 'Select options');
-    selectBtn.type = 'button';
-    selectBtn.disabled = !model.inStock;
-    selectBtn.onclick = () => renderOptionsWizard(body, model, ctx, updateCartId, heroImg);
-    right.append(selectBtn);
-    footer.appendChild(right);
-    body.appendChild(footer);
-  } else {
-    // Simple product (no variants, ≤1 optional addon): inline add.
-    const base = parsePrice(model.price);
-    const priceEl = el('span', 'syn-price', model.price);
-    let qty: ReturnType<typeof qtyStepper> | undefined;
-    let addons: ReturnType<typeof addonGroups> | undefined;
-    const updatePrice = () => {
-      const mod = addons ? addons.collect().modifierTotal : 0;
-      priceEl.textContent = formatPriceLike((base.amount + mod) * (qty ? qty.get() : 1), base);
+  // No-options product: render it as a single-row list card (per product-list
+  // design) rather than a bespoke detail view.
+  const headerBar = el('div', 'syn-listhead-bar');
+  headerBar.appendChild(el('span', 'syn-listhead-title', model.siteName ? `${model.siteName}` : ''));
+  const bag = viewCartButton(model.siteId, ctx);
+  headerBar.appendChild(bag);
+  root.appendChild(headerBar);
+
+  const card = el('div', 'syn-card');
+  const list = el('div', 'syn-list');
+  const row = el('div', 'syn-row');
+  const thumb = el('img', 'syn-thumb');
+  setThumb(thumb, model.image ?? model.images?.[0], model.title);
+  thumb.loading = 'lazy';
+  const rb = el('div', 'syn-rowbody');
+  const titleLine = el('div', 'syn-rowtitle-line');
+  titleLine.append(el('span', 'syn-rowtitle', model.title), stockChip(model.inStock));
+  rb.append(titleLine, el('div', 'syn-price', model.price));
+
+  const actions = el('div', 'syn-rowactions');
+  if (!model.inStock) {
+    const qty = qtyStepper(undefined, { start: 0, min: 0, disabled: true });
+    const notify = el('button', 'syn-btn syn-btn-primary', 'Notify me') as HTMLButtonElement;
+    notify.type = 'button';
+    notify.onclick = () => {
+      ctx.sendMessage?.(`Please notify me when "${model.title}" is back in stock.`);
+      showButtonNote(notify, "We'll let you know.");
     };
-    addons = model.addons && model.addons.length > 0 ? addonGroups(model.addons, updatePrice) : undefined;
-    if (addons) body.appendChild(addons.node);
-    qty = qtyStepper(updatePrice);
-
-    const footer = el('div', 'syn-footer');
-    const priceblk = el('div', 'syn-priceblk');
-    priceblk.appendChild(priceEl);
-    priceblk.appendChild(stockChip(model.inStock));
-    footer.appendChild(priceblk);
-
-    const btn = addToCartButton(
-      model.addToCart, ctx,
-      () => {
-        const c = addons?.collect();
-        return { quantity: qty!.get(), addons: c?.values, missing: c?.missing ?? [] };
-      },
-      'lg',
-    );
-    btn.disabled = !model.inStock;
+    actions.append(qty.node, notify);
+  } else {
+    const qty = qtyStepper();
+    const btn = addToCartButton(model.addToCart, ctx, () => ({ quantity: qty.get(), missing: [] }));
+    btn.textContent = 'Add to cart';
     const origin = btn.onclick;
     btn.onclick = async (e) => {
       await (origin as ((this: HTMLButtonElement, ev: PointerEvent) => unknown) | null)?.call(btn, e);
       updateCartId(model.addToCart.params.cart_id as string);
-      bag.repaint(); // count grew; the cart id is now known to the shared bag
+      bag.repaint();
     };
-
-    const right = el('div', 'syn-rowactions');
-    right.append(qty.node, btn);
-    footer.appendChild(right);
-    body.appendChild(footer);
+    actions.append(qty.node, btn);
   }
-
-  card.appendChild(body);
+  row.append(thumb, rb, actions);
+  list.appendChild(row);
+  card.appendChild(list);
   root.appendChild(card);
 }
 
-/** Stepped options wizard: variant step → addons step → review → Add to cart. Renders into `body`. */
+/** Seamless white check for the selected option in a multi-select dropdown. */
+const CHECK_SVG =
+  '<svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+  '<path d="M4.5 10.5l3.5 3.5 7.5-8" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+/** A grind/roast-style option group, unified across variant axes and addons. */
+interface WizardOption { value: string; label: string; disabled?: boolean; priceLabel?: string }
+interface WizardGroup { key: string; label: string; isVariantAxis: boolean; multiple: boolean; options: WizardOption[] }
+
+/**
+ * Custom dropdown matching the Figma: a trigger box that expands an option panel.
+ * Single-select rows fill emerald when chosen and the panel closes; multi-select
+ * rows fill emerald with a white check and the panel stays open so more can be
+ * picked. Options carry an optional right-aligned price label.
+ */
+function customDropdown(args: {
+  options: WizardOption[];
+  multiple: boolean;
+  placeholder: string;
+  selected: string[];
+  onChange: (values: string[]) => void;
+}): HTMLElement {
+  const dd = el('div', 'syn-dd');
+  dd.setAttribute('aria-expanded', 'false');
+  const sel = new Set(args.selected);
+
+  const trigger = el('button', 'syn-dd-trigger') as HTMLButtonElement;
+  trigger.type = 'button';
+  const valEl = el('span', 'val');
+  trigger.append(valEl, el('span', 'chev'));
+
+  const panel = el('div', 'syn-dd-panel');
+  const optButtons = new Map<string, HTMLButtonElement>();
+  const labelFor = (v: string) => args.options.find((o) => o.value === v)?.label ?? v;
+  const paintTrigger = () => {
+    const vals = [...sel];
+    valEl.textContent = vals.length === 0 ? args.placeholder : vals.map(labelFor).join(', ');
+  };
+  const paintOpts = () => {
+    for (const [v, b] of optButtons) b.classList.toggle('is-sel', sel.has(v));
+  };
+
+  for (const o of args.options) {
+    const b = el('button', 'syn-dd-opt') as HTMLButtonElement;
+    b.type = 'button';
+    b.disabled = !!o.disabled;
+    b.appendChild(el('span', undefined, o.label));
+    const end = el('span', 'syn-dd-end');
+    if (o.priceLabel) end.appendChild(el('span', 'price', o.priceLabel));
+    if (args.multiple) {
+      const check = el('span', 'syn-dd-check');
+      check.innerHTML = CHECK_SVG;
+      end.appendChild(check);
+    }
+    b.appendChild(end);
+    b.onclick = () => {
+      if (args.multiple) {
+        if (sel.has(o.value)) sel.delete(o.value);
+        else sel.add(o.value);
+        paintOpts(); paintTrigger();
+        args.onChange([...sel]); // stays open for more picks
+      } else {
+        sel.clear(); sel.add(o.value);
+        paintOpts(); paintTrigger();
+        dd.setAttribute('aria-expanded', 'false');
+        args.onChange([...sel]);
+      }
+    };
+    optButtons.set(o.value, b);
+    panel.appendChild(b);
+  }
+
+  trigger.onclick = () => {
+    dd.setAttribute('aria-expanded', dd.getAttribute('aria-expanded') === 'true' ? 'false' : 'true');
+  };
+  paintTrigger(); paintOpts();
+  dd.append(trigger, panel);
+  return dd;
+}
+
+/**
+ * Customize wizard (Figma): hero banner + "Step n of 2" + an inset panel of dropdown
+ * option rows ("Select Your Grind (optional)" → None ▾) → Review (chosen options,
+ * quantity, total) → Add to cart. Variant axes and single-select addons both render
+ * as dropdowns; the chosen axis values resolve a variant via the variant matrix.
+ * Renders the whole view into `root`.
+ */
 function renderOptionsWizard(
-  body: HTMLElement,
+  root: HTMLElement,
   model: ProductCardModel,
   ctx: ViewCtx,
   updateCartId: (cId?: string) => void,
-  heroImg?: HTMLImageElement,
 ): void {
   const base = parsePrice(model.price);
-  let selectedVariant: ProductCardVariant | undefined;
+  const variants = model.variants ?? [];
+  const axes = deriveAxes(variants);
+
+  // Modifier amount per option value, keyed by group, so totals + the variant
+  // resolver can look them up without re-parsing.
+  const modifiers = new Map<string, number>();
+  const modKey = (gk: string, v: string) => `${gk} ${v}`;
+
+  // Build a unified list of option groups (variant axes first, then addons).
+  const groups: WizardGroup[] = [];
+  for (const axis of axes) {
+    groups.push({
+      key: `axis:${axis.name}`,
+      label: axis.name,
+      isVariantAxis: true,
+      multiple: false,
+      options: axis.values.map((v) => ({ value: v, label: v })),
+    });
+  }
+  // Variants with no attributes → a single "Variant" dropdown of titles.
+  if (variants.length > 0 && axes.length === 0) {
+    groups.push({
+      key: '__variant',
+      label: 'Variant',
+      isVariantAxis: false,
+      multiple: false,
+      options: variants.map((v) => ({ value: v.title, label: v.title, disabled: !v.inStock, priceLabel: v.price })),
+    });
+  }
+  for (const a of model.addons ?? []) {
+    const multiple = a.type === 'checkbox' || (a as any).multiple === true;
+    const gk = `addon:${a.addonId}`;
+    groups.push({
+      key: gk,
+      label: a.label,
+      isVariantAxis: false,
+      multiple,
+      options: (a.options ?? []).map((o: any) => {
+        const value = typeof o === 'string' ? o : (o.value ?? o.label);
+        const label = typeof o === 'string' ? o : (o.label ?? o.value);
+        // priceModifier may arrive as a number (1) or a formatted string ("GHS 1.00").
+        // Coerce robustly so the total never becomes NaN and the label isn't double-prefixed.
+        const rawMod = typeof o === 'string' ? 0 : (o.priceModifier ?? o.price_modifier);
+        const mod = typeof rawMod === 'number' ? rawMod : getModifierValue(rawMod ? String(rawMod) : undefined);
+        modifiers.set(modKey(gk, value), mod);
+        return { value, label, priceLabel: mod ? `+${formatPriceLike(mod, base)}` : undefined };
+      }),
+    });
+  }
+
+  // Selection state: group key → chosen values (single-select groups hold ≤1).
+  const selected: Record<string, string[]> = {};
   const selectedAxis: Record<string, string> = {};
-  const addons = model.addons && model.addons.length > 0 ? addonGroups(model.addons) : undefined;
+  let selectedVariant: ProductCardVariant | undefined;
   const qtyState = { n: 1 };
+  let stepIdx = 0; // 0 = customize, 1 = review
 
-  const steps: Array<'variant' | 'addons' | 'review'> = [];
-  if (model.variants && model.variants.length > 0) steps.push('variant');
-  if (model.addons && model.addons.length > 0) steps.push('addons');
-  steps.push('review');
-  let stepIdx = 0;
-
-  const variantBase = () => (selectedVariant ? parsePrice(selectedVariant.price).amount : base.amount);
-  const lineTotal = () => {
-    const mod = addons ? addons.collect().modifierTotal : 0;
-    return formatPriceLike((variantBase() + mod) * qtyState.n, base);
+  const resolve = () => {
+    for (const g of groups) {
+      if (g.isVariantAxis) {
+        const name = g.label;
+        const v = selected[g.key]?.[0];
+        if (v) selectedAxis[name] = v;
+        else delete selectedAxis[name];
+      }
+    }
+    const variantPick = selected['__variant']?.[0];
+    if (variantPick) {
+      selectedVariant = variants.find((v) => v.title === variantPick);
+    } else {
+      selectedVariant = Object.keys(selectedAxis).length ? resolveVariant(variants, selectedAxis) : undefined;
+    }
   };
+  const variantBase = () => (selectedVariant ? parsePrice(selectedVariant.price).amount : base.amount);
+  const addonMod = () =>
+    groups
+      .filter((g) => g.key.startsWith('addon:'))
+      .reduce((s, g) => s + (selected[g.key] ?? []).reduce((t, v) => t + (modifiers.get(modKey(g.key, v)) ?? 0), 0), 0);
+  const lineTotal = () => formatPriceLike((variantBase() + addonMod()) * qtyState.n, base);
+
+  const heroImageUrl = () =>
+    (selectedVariant?.image) || model.image || model.images?.[0] || '';
 
   const render = () => {
-    body.replaceChildren();
-    const step = steps[stepIdx];
+    root.replaceChildren();
+    const wizard = el('div', 'syn-wizard');
 
-    body.appendChild(el('div', 'syn-listhead', `Step ${stepIdx + 1} of ${steps.length} · ${model.title}`));
-    const hint = el('div', 'syn-err');
-
-    if (step === 'variant') {
-      const variants = model.variants ?? [];
-      const axes = deriveAxes(variants);
-
-      if (axes.length === 0) {
-        // Fallback: variants have no attributes — keep the flat radio-card list.
-        const wrap = el('div', 'syn-form');
-        for (const v of variants) {
-          const cardBtn = el('button', 'syn-radio-card');
-          cardBtn.type = 'button';
-          cardBtn.setAttribute('aria-checked', selectedVariant?.variantId === v.variantId ? 'true' : 'false');
-          cardBtn.appendChild(el('div', 'syn-radio-title', v.title));
-          cardBtn.appendChild(el('div', 'syn-radio-cost', v.inStock ? v.price : `${v.price} · Out of stock`));
-          cardBtn.disabled = !v.inStock;
-          cardBtn.onclick = () => { selectedVariant = v; render(); };
-          wrap.appendChild(cardBtn);
-        }
-        body.appendChild(wrap);
-      } else {
-        const wrap = el('div', 'syn-form');
-        for (const axis of axes) {
-          wrap.appendChild(el('div', 'syn-axis', axis.name));
-          const row = el('div', 'syn-pillrow');
-          for (const value of axis.values) {
-            const available = isValueAvailable(variants, selectedAxis, axis.name, value);
-            const pill = el('button', 'syn-pill' + (selectedAxis[axis.name] === value ? ' syn-pill-sel' : '') + (available ? '' : ' syn-pill-oos'), value) as HTMLButtonElement;
-            pill.type = 'button';
-            pill.disabled = !available;
-            pill.setAttribute('aria-checked', selectedAxis[axis.name] === value ? 'true' : 'false');
-            pill.onclick = () => {
-              selectedAxis[axis.name] = value;
-              selectedVariant = resolveVariant(variants, selectedAxis);
-              // When a variant resolves, show its image if present, else fall back to the
-              // product's base image (spec §2). Don't touch the hero on partial selection.
-              if (heroImg && selectedVariant) heroImg.src = selectedVariant.image || model.image || heroImg.src;
-              render();
-            };
-            row.appendChild(pill);
-          }
-          wrap.appendChild(row);
-        }
-        body.appendChild(wrap);
-      }
-    } else if (step === 'addons' && addons) {
-      body.appendChild(addons.node);
-    } else {
-      const wrap = el('div', 'syn-form');
-      if (selectedVariant) wrap.appendChild(reviewRow('Variant', selectedVariant.title));
-      if (addons) {
-        const sel = addons.collect().values;
-        for (const a of model.addons ?? []) {
-          const v = sel[a.addonId];
-          if (v != null && v !== '') wrap.appendChild(reviewRow(a.label, Array.isArray(v) ? v.join(', ') : String(v)));
-        }
-      }
-      const totEl = el('span', 'syn-price', lineTotal());
-      // Use the qty the stepper passes in: qtyStepper() fires onChange during its
-      // own construction (sync()), before this `const qStep` is initialised, so
-      // reading qStep.get() here threw a TDZ ReferenceError and blanked the review step.
-      const qStep = qtyStepper((n) => { qtyState.n = n; totEl.textContent = lineTotal(); });
-      const qRow = el('div', 'syn-totline');
-      qRow.append(el('span', 'syn-muted', 'Quantity'), qStep.node);
-      wrap.appendChild(qRow);
-      const tot = el('div', 'syn-totline syn-totline-grand');
-      tot.append(el('span', undefined, 'Total'), totEl);
-      wrap.appendChild(tot);
-      body.appendChild(wrap);
+    // Hero banner with floating basket.
+    const heroUrl = heroImageUrl();
+    if (heroUrl) {
+      const hero = el('div', 'syn-wizard-hero');
+      const img = el('img');
+      img.src = heroUrl; img.alt = model.title;
+      hero.appendChild(img);
+      const bagWrap = el('span', 'syn-wizard-bag');
+      bagWrap.appendChild(viewCartButton(model.siteId, ctx));
+      hero.appendChild(bagWrap);
+      wizard.appendChild(hero);
     }
 
-    body.appendChild(hint);
+    // Step label: "Step 1 of 2  -  Customize" / "Step 2 of 2  -  Review".
+    const label = el('div', 'syn-step-label');
+    label.append(
+      document.createTextNode(`Step ${stepIdx + 1} of 2  -  `),
+      el('b', undefined, stepIdx === 0 ? 'Customize Your Order' : 'Review'),
+    );
+    wizard.appendChild(label);
 
-    const nav = el('div', 'syn-checkout-footer');
+    const inset = el('div', 'syn-inset');
+
+    if (stepIdx === 0) {
+      // Customize: a white card of labelled dropdown rows.
+      const optcard = el('div', 'syn-optcard');
+      if (groups.length === 0) {
+        optcard.appendChild(el('div', 'syn-optlabel', 'No options to customise — continue to review.'));
+      }
+      for (const g of groups) {
+        const rowEl = el('div', 'syn-optrow');
+        const hint = g.multiple ? ' (choose any)' : ' (optional)';
+        rowEl.appendChild(el('label', 'syn-optlabel', `${g.label}${hint}`));
+        // Disable axis values not available given current sibling-axis picks.
+        const options = g.options.map((o) => ({
+          ...o,
+          disabled: o.disabled || (g.isVariantAxis
+            ? !isValueAvailable(variants, { ...selectedAxis, [g.label]: o.value }, g.label, o.value)
+            : false),
+        }));
+        rowEl.appendChild(customDropdown({
+          options,
+          multiple: g.multiple,
+          placeholder: 'None',
+          selected: selected[g.key] ?? [],
+          onChange: (vals) => {
+            selected[g.key] = vals;
+            resolve();
+            // Re-render only on variant changes (hero/availability shift); multi-select
+            // addons stay open and update totals on the review step, so avoid a re-render
+            // that would collapse the panel mid-pick.
+            if (g.isVariantAxis || g.key === '__variant') render();
+          },
+        }));
+        optcard.appendChild(rowEl);
+      }
+      inset.appendChild(optcard);
+    } else {
+      // Review: chosen options, quantity, total.
+      const card = el('div', 'syn-review-card');
+      const chosen = groups.filter((g) => (selected[g.key]?.length ?? 0) > 0);
+      for (const g of chosen) {
+        const r = el('div', 'syn-review-row');
+        r.append(el('span', 'k', g.label), el('span', 'v', selected[g.key].join(', ')));
+        card.appendChild(r);
+      }
+      if (chosen.length) card.appendChild(el('div', 'syn-review-divider'));
+
+      // totV declared before the stepper: qtyStepper fires onChange during its own
+      // construction (sync()), so the closure must not reference an uninitialised var.
+      const totV = el('span', 'v', lineTotal());
+      const qRow = el('div', 'syn-review-row');
+      const qStep = qtyStepper((n) => { qtyState.n = n; totV.textContent = lineTotal(); }, { start: qtyState.n });
+      qRow.append(el('span', 'k', 'Quantity'), qStep.node);
+      card.appendChild(qRow);
+      card.appendChild(el('div', 'syn-review-divider'));
+
+      const totRow = el('div', 'syn-review-row syn-review-total');
+      totRow.append(el('span', 'k', 'Total'), totV);
+      card.appendChild(totRow);
+      inset.appendChild(card);
+    }
+    wizard.appendChild(inset);
+
+    // Footer: Back (left) + Next/Add to cart (right).
+    const foot = el('div', 'syn-wizard-foot');
     if (stepIdx > 0) {
       const back = el('button', 'syn-btn syn-btn-ghost', 'Back');
       back.type = 'button';
       back.onclick = () => { stepIdx--; render(); };
-      nav.appendChild(back);
-    } else {
-      nav.appendChild(el('span'));
+      foot.appendChild(back);
     }
-
-    if (step !== 'review') {
+    foot.appendChild(el('span', 'spacer'));
+    if (stepIdx === 0) {
       const next = el('button', 'syn-btn syn-btn-primary', 'Next');
       next.type = 'button';
-      next.onclick = () => {
-        if (step === 'variant' && !selectedVariant) { hint.textContent = 'Please choose an option.'; return; }
-        if (step === 'addons' && addons) {
-          const miss = addons.collect().missing;
-          if (miss.length > 0) { hint.textContent = `Please choose ${miss[0]}.`; return; }
-        }
-        stepIdx++;
-        render();
-      };
-      nav.appendChild(next);
+      next.onclick = () => { stepIdx = 1; render(); };
+      foot.appendChild(next);
     } else {
       const add = addToCartButton(
         model.addToCart, ctx,
         () => {
-          const c = addons?.collect();
-          return { quantity: qtyState.n, addons: c?.values, variantId: selectedVariant?.variantId, missing: c?.missing ?? [] };
+          const addonValues: Record<string, string | string[]> = {};
+          for (const g of groups) {
+            if (!g.key.startsWith('addon:')) continue;
+            const vals = selected[g.key] ?? [];
+            if (vals.length === 0) continue;
+            addonValues[g.key.replace(/^addon:/, '')] = g.multiple ? vals : vals[0];
+          }
+          return { quantity: qtyState.n, addons: addonValues, variantId: selectedVariant?.variantId, missing: [] };
         },
         'lg',
       );
+      add.textContent = 'Add to cart';
       const origin = add.onclick;
       add.onclick = async (e) => {
         await (origin as ((this: HTMLButtonElement, ev: PointerEvent) => unknown) | null)?.call(add, e);
         updateCartId(model.addToCart.params.cart_id as string);
       };
-      nav.appendChild(add);
+      foot.appendChild(add);
     }
-    body.appendChild(nav);
+    wizard.appendChild(foot);
+    root.appendChild(wizard);
   };
 
   render();
@@ -1073,75 +1255,149 @@ function renderCartStep(
 ): void {
   root.replaceChildren();
   setCartCount(model.siteId, model.items);
-  const card = el('div', 'syn-card');
 
-  const header = el('div', 'syn-listhead');
-  header.appendChild(document.createTextNode('Your cart'));
-  if (model.cartId) {
-    const idSpan = el('span', 'syn-cart-id', ` (ID: ${model.cartId})`);
-    idSpan.style.fontSize = '0.8em';
-    idSpan.style.opacity = '0.7';
-    idSpan.style.marginLeft = '8px';
-    header.appendChild(idSpan);
-  }
-  card.appendChild(header);
+  // Header bar: "Your cart" left, "#ID: {cartId}" right.
+  const head = el('div', 'syn-cart-head');
+  head.appendChild(el('span', 't', 'Your cart'));
+  if (model.cartId) head.appendChild(el('span', 'id', `#ID: ${model.cartId}`));
+  root.appendChild(head);
+
+  const stack = el('div', 'syn-stack');
 
   if (model.items.length === 0) {
-    card.appendChild(el('div', 'syn-cartempty syn-muted', 'Cart is empty.'));
-  } else {
-    const list = el('div', 'syn-list');
-    for (const it of model.items) {
-      const r = el('div', 'syn-row');
-      if (it.image) {
-        const thumb = el('img', 'syn-thumb');
-        thumb.src = it.image;
-        thumb.alt = it.title;
-        thumb.loading = 'lazy';
-        r.appendChild(thumb);
+    const empty = el('div', 'syn-card syn-card-pad syn-muted');
+    empty.textContent = 'Your cart is empty.';
+    stack.appendChild(empty);
+    root.appendChild(stack);
+    return;
+  }
+
+  // Summary card: any line customizations (variant/addons) + Subtotal + Total.
+  const summary = el('div', 'syn-card syn-summary-card');
+  summary.appendChild(el('div', 'syn-summary-title', 'Order Summary'));
+  let hasCustom = false;
+  for (const it of model.items) {
+    const bits = [it.variantTitle, it.addonsSummary].filter(Boolean) as string[];
+    if (bits.length === 0) continue;
+    hasCustom = true;
+    const r = el('div', 'syn-review-row');
+    r.append(el('span', 'k', it.title), el('span', 'v', bits.join(' · ')));
+    summary.appendChild(r);
+  }
+  if (hasCustom) summary.appendChild(el('div', 'syn-review-divider'));
+  const subRow = el('div', 'syn-review-row');
+  subRow.append(el('span', 'k', 'Subtotal'), el('span', 'v', model.subtotal));
+  summary.appendChild(subRow);
+  const totRow = el('div', 'syn-review-row syn-review-total');
+  totRow.append(el('span', 'k', 'Total'), el('span', 'v', model.total));
+  summary.appendChild(totRow);
+  stack.appendChild(summary);
+
+  // Items card: one row per line — thumbnail · title + In stock · price · stepper + trash.
+  const card = el('div', 'syn-card');
+  const list = el('div', 'syn-list');
+  for (const it of model.items) {
+    const r = el('div', 'syn-row');
+    const thumb = el('img', 'syn-thumb');
+    setThumb(thumb, it.image, it.title);
+    thumb.loading = 'lazy';
+
+    const body = el('div', 'syn-rowbody');
+    const titleLine = el('div', 'syn-rowtitle-line');
+    titleLine.append(el('span', 'syn-rowtitle', it.title), stockChip(true));
+    body.append(titleLine, el('div', 'syn-price', it.unitPrice));
+
+    const actions = el('div', 'syn-rowactions');
+    // Quantity edits write through to the server cart (the checkout source of truth)
+    // via set_cart_quantity, then re-render. Debounced so holding +/- coalesces into
+    // one write of the final quantity. Falls back to a chat-message hint if the host
+    // has no set-quantity tool. The first onChange (stepper construction) is skipped.
+    let qtyTimer: ReturnType<typeof setTimeout> | undefined;
+    let primed = false;
+    const qty = qtyStepper((n) => {
+      if (!primed) { primed = true; return; } // ignore the initial sync()
+      if (!it.setQtyAction) {
+        ctx.sendMessage?.(`Please set "${it.title}" quantity to ${n} in my cart.`);
+        return;
       }
-      const body = el('div', 'syn-rowbody');
-      body.appendChild(el('div', 'syn-rowtitle', it.title));
-      const metaBits = [`Qty ${it.qty}`, it.unitPrice];
-      if (it.variantTitle) metaBits.push(it.variantTitle);
-      const meta = el('div', 'syn-rowmeta');
-      meta.appendChild(el('span', 'syn-muted', metaBits.join(' · ')));
-      body.appendChild(meta);
-      if (it.addonsSummary) body.appendChild(el('div', 'syn-muted', it.addonsSummary));
-      const actions = el('div', 'syn-rowactions');
-      actions.appendChild(el('span', 'syn-price', it.lineTotal));
-      if (it.removeAction) actions.appendChild(simpleActionButton(it.removeAction, ctx));
-      r.append(body, actions);
-      list.appendChild(r);
+      if (qtyTimer) clearTimeout(qtyTimer);
+      qtyTimer = setTimeout(async () => {
+        try {
+          const res = await ctx.callTool(it.setQtyAction!.toolName, {
+            ...(it.setQtyAction!.params as Record<string, unknown>),
+            quantity: n,
+          });
+          if (res.isError) throw new Error(textOf(res) || 'Could not update quantity');
+          ctx.onResult?.(res);
+        } catch (err) {
+          showButtonError(qty.node, err);
+        }
+      }, 450);
+    }, { start: it.qty });
+    actions.appendChild(qty.node);
+    if (it.removeAction) {
+      const trash = el('button', 'syn-trash') as HTMLButtonElement;
+      trash.type = 'button';
+      trash.setAttribute('aria-label', `Remove ${it.title}`);
+      trash.innerHTML = TRASH_SVG;
+      trash.onclick = async () => {
+        trash.disabled = true;
+        try {
+          const res = await ctx.callTool(it.removeAction!.toolName, it.removeAction!.params as Record<string, unknown>);
+          if (res.isError) throw new Error(textOf(res) || 'Could not remove item');
+          ctx.onResult?.(res);
+        } catch (err) {
+          trash.disabled = false;
+          showButtonError(trash, err);
+        }
+      };
+      actions.appendChild(trash);
     }
-    card.appendChild(list);
+    r.append(thumb, body, actions);
+    list.appendChild(r);
   }
+  card.appendChild(list);
+  stack.appendChild(card);
+  root.appendChild(stack);
 
-  const totals = el('div', 'syn-carttotals');
-  const sub = el('div', 'syn-totline');
-  sub.append(el('span', 'syn-muted', 'Subtotal'), el('span', undefined, model.subtotal));
-  const tot = el('div', 'syn-totline syn-totline-grand');
-  tot.append(el('span', undefined, 'Total'), el('span', 'syn-price', model.total));
-  totals.append(sub, tot);
-  card.appendChild(totals);
+  // Footer: Continue shopping (ghost) + Proceed to checkout (primary).
+  const foot = el('div', 'syn-cart-foot');
+  const cont = el('button', 'syn-btn syn-btn-ghost', 'Continue shopping');
+  cont.type = 'button';
+  cont.onclick = () => ctx.sendMessage?.('I want to keep shopping — please show me the product list again.');
+  const checkoutBtn = el('button', 'syn-btn syn-btn-primary', 'Proceed to checkout');
+  checkoutBtn.type = 'button';
+  checkoutBtn.onclick = () => transitionTo('shipping_address');
+  foot.append(cont, checkoutBtn);
+  root.appendChild(foot);
+}
 
-  if (model.items.length > 0) {
-    const cartFooter = el('div', 'syn-checkout-footer');
+/** Big check glyph for the order-confirmed badge. */
+const SUCCESS_CHECK_SVG =
+  '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+  '<path d="M5 12.5l4.2 4.2L19 7" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
-    const cont = el('button', 'syn-btn syn-btn-ghost', '← Continue shopping');
-    cont.type = 'button';
-    cont.onclick = () => {
-      ctx.sendMessage?.('I want to keep shopping — please show me the product list again.');
-    };
-
-    const checkoutBtn = el('button', 'syn-btn syn-btn-primary', 'Proceed to Checkout');
-    checkoutBtn.type = 'button';
-    checkoutBtn.onclick = () => transitionTo('shipping_address');
-
-    cartFooter.append(cont, checkoutBtn);
-    card.appendChild(cartFooter);
-  }
-
+/**
+ * Checkout-step scaffold (Figma): a dark heading on the mint canvas, an optional
+ * explanatory note, a white card for the step's body, and a canvas footer. Returns
+ * the card (caller fills it) + the footer (caller adds Back / CTA buttons).
+ */
+function stepScaffold(root: HTMLElement, title: string, note?: string): { card: HTMLElement; foot: HTMLElement } {
+  root.replaceChildren();
+  root.appendChild(el('div', 'syn-step-h', title));
+  if (note) root.appendChild(el('div', 'syn-step-note', note));
+  const card = el('div', 'syn-card');
   root.appendChild(card);
+  const foot = el('div', 'syn-step-foot');
+  root.appendChild(foot);
+  return { card, foot };
+}
+
+/** Append Back (left) + CTA (right) to a step footer; CTA right-aligned even without Back. */
+function stepFooter(foot: HTMLElement, back: HTMLElement | null, cta: HTMLElement): void {
+  if (back) foot.appendChild(back);
+  foot.appendChild(el('span', 'spacer'));
+  foot.appendChild(cta);
 }
 
 function renderShippingAddressStep(
@@ -1152,11 +1408,7 @@ function renderShippingAddressStep(
   transitionTo: (step: CheckoutState['step']) => void,
   saveState: () => void,
 ): void {
-  root.replaceChildren();
-  const card = el('div', 'syn-card');
-
-  const header = el('div', 'syn-listhead', 'Shipping Address');
-  card.appendChild(header);
+  const { card, foot } = stepScaffold(root, 'Shipping Address');
 
   const form = el('form', 'syn-form');
   form.onsubmit = (e) => e.preventDefault();
@@ -1215,11 +1467,12 @@ function renderShippingAddressStep(
   form.append(groupLine1, groupCity, row, groupCountry, groupPhone);
   card.appendChild(form);
 
-  const footer = el('div', 'syn-checkout-footer');
-  const backBtn = el('button', 'syn-btn syn-btn-ghost', 'Back');
+  const backBtn = el('button', 'syn-btn syn-btn-ghost', 'Back') as HTMLButtonElement;
+  backBtn.type = 'button';
   backBtn.onclick = () => transitionTo('cart');
 
-  const nextBtn = el('button', 'syn-btn syn-btn-primary', 'Calculate Shipping');
+  const nextBtn = el('button', 'syn-btn syn-btn-primary', 'Calculate Shipping') as HTMLButtonElement;
+  nextBtn.type = 'button';
   nextBtn.onclick = async () => {
     const country = selectCountry.value;
     const city = inputCity.value.trim();
@@ -1261,9 +1514,7 @@ function renderShippingAddressStep(
     }
   };
 
-  footer.append(backBtn, nextBtn);
-  card.appendChild(footer);
-  root.appendChild(card);
+  stepFooter(foot, backBtn, nextBtn);
 }
 
 function renderShippingMethodsStep(
@@ -1274,59 +1525,45 @@ function renderShippingMethodsStep(
   transitionTo: (step: CheckoutState['step']) => void,
   saveState: () => void,
 ): void {
-  root.replaceChildren();
-  const card = el('div', 'syn-card');
-
-  const header = el('div', 'syn-listhead', 'Select Shipping Method');
-  card.appendChild(header);
+  const { card, foot } = stepScaffold(root, 'Select Shipping Method');
 
   const options = state.checkoutModel?.shippingOptions || [];
-  const list = el('div', 'syn-list');
-  list.style.padding = '0 20px';
-  list.style.display = 'flex';
-  list.style.flexDirection = 'column';
-  list.style.gap = '10px';
+  const list = el('div', 'syn-options');
 
   let selectedId = state.selectedOptionId || (options[0]?.optionId || '');
 
   if (options.length === 0) {
     const empty = el('div', 'syn-muted', 'No shipping options available for this address.');
-    empty.style.padding = '20px 0';
+    empty.style.padding = '8px 4px';
     list.appendChild(empty);
   } else {
     for (const opt of options) {
-      const row = el('button', 'syn-radio-card');
+      const row = el('button', 'syn-option') as HTMLButtonElement;
       row.type = 'button';
       row.setAttribute('aria-checked', opt.optionId === selectedId ? 'true' : 'false');
-      
-      const title = el('div', 'syn-radio-title', opt.label);
-      row.appendChild(title);
-      
-      if (opt.description) {
-        row.appendChild(el('div', 'syn-radio-desc', opt.description));
-      }
-      
-      row.appendChild(el('div', 'syn-radio-cost', opt.cost));
+
+      const main = el('div', 'syn-opt-main');
+      main.appendChild(el('div', 'ttl', opt.label));
+      if (opt.description) main.appendChild(el('div', 'sub', opt.description));
+      row.appendChild(main);
+      if (opt.cost) row.appendChild(el('div', 'meta', opt.cost));
 
       row.onclick = () => {
         selectedId = opt.optionId;
-        for (const child of list.children) {
-          child.setAttribute('aria-checked', 'false');
-        }
+        for (const child of list.children) child.setAttribute('aria-checked', 'false');
         row.setAttribute('aria-checked', 'true');
       };
-
       list.appendChild(row);
     }
   }
-
   card.appendChild(list);
 
-  const footer = el('div', 'syn-checkout-footer');
-  const backBtn = el('button', 'syn-btn syn-btn-ghost', 'Back');
+  const backBtn = el('button', 'syn-btn syn-btn-ghost', 'Back') as HTMLButtonElement;
+  backBtn.type = 'button';
   backBtn.onclick = () => transitionTo('shipping_address');
 
-  const nextBtn = el('button', 'syn-btn syn-btn-primary', 'Apply Shipping');
+  const nextBtn = el('button', 'syn-btn syn-btn-primary', 'Apply Shipping') as HTMLButtonElement;
+  nextBtn.type = 'button';
   nextBtn.disabled = options.length === 0;
   nextBtn.onclick = async () => {
     nextBtn.disabled = true;
@@ -1354,9 +1591,7 @@ function renderShippingMethodsStep(
     }
   };
 
-  footer.append(backBtn, nextBtn);
-  card.appendChild(footer);
-  root.appendChild(card);
+  stepFooter(foot, backBtn, nextBtn);
 }
 
 function renderDelegationRequestStep(
@@ -1367,19 +1602,14 @@ function renderDelegationRequestStep(
   transitionTo: (step: CheckoutState['step']) => void,
   saveState: () => void,
 ): void {
-  root.replaceChildren();
-  const card = el('div', 'syn-card');
-
-  const header = el('div', 'syn-listhead', 'Verification & Delegation');
-  card.appendChild(header);
-
-  const body = el('div', 'syn-body');
-  const note = el('div', 'syn-muted', 'Because payments and checkouts spend money, we require explicit buyer delegation. Enter your email to receive a 6-digit approval code.');
-  body.appendChild(note);
+  const { card, foot } = stepScaffold(
+    root,
+    'Verification & Delegation',
+    'Because payments and checkouts spend money, we require explicit buyer delegation. Enter your email to receive a 6-digit approval code.',
+  );
 
   const form = el('form', 'syn-form');
   form.onsubmit = (e) => e.preventDefault();
-  form.style.padding = '0';
 
   const groupEmail = el('div', 'syn-form-group');
   groupEmail.appendChild(el('label', 'syn-form-label', 'Buyer Email Address'));
@@ -1389,14 +1619,14 @@ function renderDelegationRequestStep(
   inputEmail.value = state.delegationEmail || '';
   groupEmail.appendChild(inputEmail);
   form.appendChild(groupEmail);
-  body.appendChild(form);
-  card.appendChild(body);
+  card.appendChild(form);
 
-  const footer = el('div', 'syn-checkout-footer');
-  const backBtn = el('button', 'syn-btn syn-btn-ghost', 'Back');
+  const backBtn = el('button', 'syn-btn syn-btn-ghost', 'Back') as HTMLButtonElement;
+  backBtn.type = 'button';
   backBtn.onclick = () => transitionTo('shipping_methods');
 
-  const nextBtn = el('button', 'syn-btn syn-btn-primary', 'Send Code');
+  const nextBtn = el('button', 'syn-btn syn-btn-primary', 'Send Code') as HTMLButtonElement;
+  nextBtn.type = 'button';
   nextBtn.onclick = async () => {
     const email = inputEmail.value.trim();
     if (!email) {
@@ -1428,9 +1658,7 @@ function renderDelegationRequestStep(
     }
   };
 
-  footer.append(backBtn, nextBtn);
-  card.appendChild(footer);
-  root.appendChild(card);
+  stepFooter(foot, backBtn, nextBtn);
 }
 
 function renderDelegationVerifyStep(
@@ -1441,19 +1669,14 @@ function renderDelegationVerifyStep(
   transitionTo: (step: CheckoutState['step']) => void,
   saveState: () => void,
 ): void {
-  root.replaceChildren();
-  const card = el('div', 'syn-card');
-
-  const header = el('div', 'syn-listhead', 'Verify Approval Code');
-  card.appendChild(header);
-
-  const body = el('div', 'syn-body');
-  const note = el('div', 'syn-muted', `We've sent a 6-digit verification code to ${state.delegationEmail || 'your email'}. Enter it below to approve checkout.`);
-  body.appendChild(note);
+  const { card, foot } = stepScaffold(
+    root,
+    'Verify Approval Code',
+    `We've sent a 6-digit verification code to ${state.delegationEmail || 'your email'}. Enter it below to approve checkout.`,
+  );
 
   const form = el('form', 'syn-form');
   form.onsubmit = (e) => e.preventDefault();
-  form.style.padding = '0';
 
   const groupCode = el('div', 'syn-form-group');
   groupCode.appendChild(el('label', 'syn-form-label', '6-Digit Code'));
@@ -1462,18 +1685,18 @@ function renderDelegationVerifyStep(
   inputCode.maxLength = 6;
   inputCode.placeholder = 'e.g. 123456';
   inputCode.style.textAlign = 'center';
-  inputCode.style.fontSize = '20px';
-  inputCode.style.letterSpacing = '6px';
+  inputCode.style.fontSize = '22px';
+  inputCode.style.letterSpacing = '8px';
   groupCode.appendChild(inputCode);
   form.appendChild(groupCode);
-  body.appendChild(form);
-  card.appendChild(body);
+  card.appendChild(form);
 
-  const footer = el('div', 'syn-checkout-footer');
-  const backBtn = el('button', 'syn-btn syn-btn-ghost', 'Back');
+  const backBtn = el('button', 'syn-btn syn-btn-ghost', 'Back') as HTMLButtonElement;
+  backBtn.type = 'button';
   backBtn.onclick = () => transitionTo('delegation_request');
 
-  const nextBtn = el('button', 'syn-btn syn-btn-primary', 'Verify Code');
+  const nextBtn = el('button', 'syn-btn syn-btn-primary', 'Verify Code') as HTMLButtonElement;
+  nextBtn.type = 'button';
   nextBtn.onclick = async () => {
     const code = inputCode.value.trim();
     if (code.length !== 6) {
@@ -1503,9 +1726,7 @@ function renderDelegationVerifyStep(
     }
   };
 
-  footer.append(backBtn, nextBtn);
-  card.appendChild(footer);
-  root.appendChild(card);
+  stepFooter(foot, backBtn, nextBtn);
 }
 
 function renderCustomerInfoStep(
@@ -1516,11 +1737,7 @@ function renderCustomerInfoStep(
   transitionTo: (step: CheckoutState['step']) => void,
   saveState: () => void,
 ): void {
-  root.replaceChildren();
-  const card = el('div', 'syn-card');
-
-  const header = el('div', 'syn-listhead', 'Checkout Details');
-  card.appendChild(header);
+  const { card, foot } = stepScaffold(root, 'Checkout Details');
 
   const form = el('form', 'syn-form');
   form.onsubmit = (e) => e.preventDefault();
@@ -1577,11 +1794,12 @@ function renderCustomerInfoStep(
 
   card.appendChild(form);
 
-  const footer = el('div', 'syn-checkout-footer');
-  const backBtn = el('button', 'syn-btn syn-btn-ghost', 'Back');
+  const backBtn = el('button', 'syn-btn syn-btn-ghost', 'Back') as HTMLButtonElement;
+  backBtn.type = 'button';
   backBtn.onclick = () => transitionTo('delegation_verify');
 
-  const nextBtn = el('button', 'syn-btn syn-btn-primary', 'Place Order');
+  const nextBtn = el('button', 'syn-btn syn-btn-primary', 'Place Order') as HTMLButtonElement;
+  nextBtn.type = 'button';
   nextBtn.onclick = async () => {
     const name = inputName.value.trim();
     const email = inputEmail.value.trim();
@@ -1629,9 +1847,7 @@ function renderCustomerInfoStep(
     }
   };
 
-  footer.append(backBtn, nextBtn);
-  card.appendChild(footer);
-  root.appendChild(card);
+  stepFooter(foot, backBtn, nextBtn);
 }
 
 function renderPaymentMethodStep(
@@ -1642,17 +1858,13 @@ function renderPaymentMethodStep(
   transitionTo: (step: CheckoutState['step']) => void,
   saveState: () => void,
 ): void {
-  root.replaceChildren();
-  const card = el('div', 'syn-card');
-
-  const header = el('div', 'syn-listhead', 'Choose Payment Method');
-  card.appendChild(header);
-
-  const body = el('div', 'syn-loader-wrap');
-  body.appendChild(el('div', 'syn-loader'));
-  body.appendChild(el('div', 'syn-muted', 'Fetching payment options…'));
-  card.appendChild(body);
-  root.appendChild(card);
+  {
+    const { card } = stepScaffold(root, 'Select Payment Option');
+    const body = el('div', 'syn-loader-wrap');
+    body.appendChild(el('div', 'syn-loader'));
+    body.appendChild(el('div', 'syn-verify', 'Fetching payment options…'));
+    card.appendChild(body);
+  }
 
   ctx.callTool('get_payment_methods', {
     site_id: state.siteId,
@@ -1663,27 +1875,21 @@ function renderPaymentMethodStep(
     const sc = res.structuredContent as any;
     const channels = sc?.channels || ['mobile_money', 'card'];
 
-    root.replaceChildren();
-    const cleanCard = el('div', 'syn-card');
-    cleanCard.appendChild(el('div', 'syn-listhead', 'Select Payment Option'));
-
-    const list = el('div', 'syn-list');
-    list.style.padding = '0 20px';
-    list.style.display = 'flex';
-    list.style.flexDirection = 'column';
-    list.style.gap = '10px';
+    const { card, foot } = stepScaffold(root, 'Select Payment Option');
+    const list = el('div', 'syn-options');
 
     for (const channel of channels) {
-      const item = el('button', 'syn-radio-card');
+      const item = el('button', 'syn-option') as HTMLButtonElement;
       item.type = 'button';
-      
-      const title = el('div', 'syn-radio-title', channel === 'mobile_money' ? 'Mobile Money' : 'Credit / Debit Card');
-      item.appendChild(title);
-      
-      const desc = el('div', 'syn-radio-desc', channel === 'mobile_money' ? 'Pay directly from your MTN, Vodafone, or AirtelTigo account.' : 'Secure online payment powered by Paystack.');
-      item.appendChild(desc);
+      const main = el('div', 'syn-opt-main');
+      main.appendChild(el('div', 'ttl', channel === 'mobile_money' ? 'Mobile Money' : 'Credit / Debit Card'));
+      main.appendChild(el('div', 'sub', channel === 'mobile_money'
+        ? 'Pay directly from your MTN, Telecel, or AirtelTigo account.'
+        : 'Secure online payment powered by Paystack.'));
+      item.appendChild(main);
 
       item.onclick = async () => {
+        item.classList.add('is-sel');
         item.disabled = true;
         if (channel === 'mobile_money') {
           state.paymentMethod = 'mobile_money';
@@ -1697,46 +1903,36 @@ function renderPaymentMethodStep(
               channel: 'card',
               buyer_delegation_token: state.delegationToken,
             });
-
             if (initRes.isError) throw new Error(textOf(initRes) || 'Failed to initiate card payment');
-
             state.paymentMethod = 'card';
             state.paymentSession = initRes.structuredContent;
             saveState();
             transitionTo('payment_poll');
           } catch (err) {
+            item.classList.remove('is-sel');
             item.disabled = false;
             showButtonError(item, err);
           }
         }
       };
-
       list.appendChild(item);
     }
-    cleanCard.appendChild(list);
+    card.appendChild(list);
 
-    const footer = el('div', 'syn-checkout-footer');
-    const backBtn = el('button', 'syn-btn syn-btn-ghost', 'Back');
+    const backBtn = el('button', 'syn-btn syn-btn-ghost', 'Back') as HTMLButtonElement;
+    backBtn.type = 'button';
     backBtn.onclick = () => transitionTo('customer_info');
-    footer.appendChild(backBtn);
-    cleanCard.appendChild(footer);
-    root.appendChild(cleanCard);
+    foot.appendChild(backBtn);
 
   }).catch((err) => {
-    root.replaceChildren();
-    const errCard = el('div', 'syn-card');
-    errCard.appendChild(el('div', 'syn-listhead', 'Payment Method Error'));
-    const errBody = el('div', 'syn-body');
-    const errMsg = el('div', 'syn-err', err.message || 'Could not fetch payment methods.');
-    errBody.appendChild(errMsg);
-    errCard.appendChild(errBody);
-
-    const footer = el('div', 'syn-checkout-footer');
-    const backBtn = el('button', 'syn-btn syn-btn-ghost', 'Back');
+    const { card, foot } = stepScaffold(root, 'Payment Method Error');
+    const errBody = el('div', 'syn-form');
+    errBody.appendChild(el('div', 'syn-err', err.message || 'Could not fetch payment methods.'));
+    card.appendChild(errBody);
+    const backBtn = el('button', 'syn-btn syn-btn-ghost', 'Back') as HTMLButtonElement;
+    backBtn.type = 'button';
     backBtn.onclick = () => transitionTo('customer_info');
-    footer.appendChild(backBtn);
-    errCard.appendChild(footer);
-    root.appendChild(errCard);
+    foot.appendChild(backBtn);
   });
 }
 
@@ -1748,11 +1944,7 @@ function renderPaymentInitiateMMStep(
   transitionTo: (step: CheckoutState['step']) => void,
   saveState: () => void,
 ): void {
-  root.replaceChildren();
-  const card = el('div', 'syn-card');
-
-  const header = el('div', 'syn-listhead', 'Mobile Money Payment');
-  card.appendChild(header);
+  const { card, foot } = stepScaffold(root, 'Mobile Money Payment');
 
   const form = el('form', 'syn-form');
   form.onsubmit = (e) => e.preventDefault();
@@ -1766,7 +1958,7 @@ function renderPaymentInitiateMMStep(
 
   const groupProvider = el('div', 'syn-form-group');
   groupProvider.appendChild(el('label', 'syn-form-label', 'Provider'));
-  const selectProvider = el('select', 'syn-form-select');
+  const selectProvider = el('select', 'syn-form-select') as HTMLSelectElement;
   const optMTN = el('option', undefined, 'MTN'); optMTN.value = 'mtn';
   const optVod = el('option', undefined, 'Telecel (Vodafone)'); optVod.value = 'vod';
   const optTgo = el('option', undefined, 'AirtelTigo'); optTgo.value = 'tgo';
@@ -1776,11 +1968,12 @@ function renderPaymentInitiateMMStep(
   form.append(groupPhone, groupProvider);
   card.appendChild(form);
 
-  const footer = el('div', 'syn-checkout-footer');
-  const backBtn = el('button', 'syn-btn syn-btn-ghost', 'Back');
+  const backBtn = el('button', 'syn-btn syn-btn-ghost', 'Back') as HTMLButtonElement;
+  backBtn.type = 'button';
   backBtn.onclick = () => transitionTo('payment_method');
 
-  const nextBtn = el('button', 'syn-btn syn-btn-primary', 'Pay Now');
+  const nextBtn = el('button', 'syn-btn syn-btn-primary', 'Pay Now') as HTMLButtonElement;
+  nextBtn.type = 'button';
   nextBtn.onclick = async () => {
     const phone = inputPhone.value.trim();
     const provider = selectProvider.value;
@@ -1815,9 +2008,7 @@ function renderPaymentInitiateMMStep(
     }
   };
 
-  footer.append(backBtn, nextBtn);
-  card.appendChild(footer);
-  root.appendChild(card);
+  stepFooter(foot, backBtn, nextBtn);
 }
 
 function renderPaymentPollStep(
@@ -1828,19 +2019,15 @@ function renderPaymentPollStep(
   transitionTo: (step: CheckoutState['step']) => void,
   saveState: () => void,
 ): void {
-  root.replaceChildren();
-  const card = el('div', 'syn-card');
-
-  const header = el('div', 'syn-listhead', 'Authorising Payment');
-  card.appendChild(header);
+  const { card } = stepScaffold(root, 'Authorizing Payment');
 
   const session = state.paymentSession;
   const isCard = state.paymentMethod === 'card';
   const inst = session?.instruction || {};
   const action = inst.action || '';
 
-  const body = el('div', 'syn-body');
-  
+  const body = el('div', 'syn-form');
+
   if (isCard) {
     // Only ever follow an https payment URL. authorization_url comes from the
     // connector/Paystack; refusing other schemes blocks a malicious connector from
@@ -1850,14 +2037,12 @@ function renderPaymentPollStep(
     const link = /^https:\/\//i.test(raw) ? raw : '';
     body.appendChild(el('div', 'syn-muted', 'Please complete the card payment in the secure window.'));
 
-    const payBtn = el('a', 'syn-btn syn-btn-primary');
+    const payBtn = el('a', 'syn-btn syn-btn-primary syn-btn-block');
     payBtn.href = link || '#';
     payBtn.target = '_blank';
     payBtn.rel = 'noopener noreferrer';
     payBtn.textContent = 'Open Secure Payment Page';
-    payBtn.style.display = 'inline-flex';
     payBtn.style.textDecoration = 'none';
-    payBtn.style.margin = '10px 0';
     // A sandboxed iframe cannot open target=_blank itself — route through the
     // host's open-link capability. The href stays as a fallback for hosts without it.
     payBtn.onclick = (e) => {
@@ -1934,12 +2119,11 @@ function renderPaymentPollStep(
   if (action !== 'submit_otp') {
     const loaderWrap = el('div', 'syn-loader-wrap');
     loaderWrap.appendChild(el('div', 'syn-loader'));
-    loaderWrap.appendChild(el('div', 'syn-muted', 'Verifying payment status…'));
+    loaderWrap.appendChild(el('div', 'syn-verify', 'Verifying payment status…'));
     body.appendChild(loaderWrap);
   }
 
   card.appendChild(body);
-  root.appendChild(card);
 
   if ((root as any)._paymentPollInterval) {
     clearInterval((root as any)._paymentPollInterval);
@@ -1963,20 +2147,15 @@ function renderPaymentPollStep(
         } else if (currentStatus === 'failed') {
           clearInterval((root as any)._paymentPollInterval);
           (root as any)._paymentPollInterval = null;
-          
-          root.replaceChildren();
-          const cleanCard = el('div', 'syn-card');
-          cleanCard.appendChild(el('div', 'syn-listhead', 'Payment Failed'));
-          const errBody = el('div', 'syn-body');
-          errBody.appendChild(el('div', 'syn-err', currentSession.message || 'Your payment failed.'));
-          cleanCard.appendChild(errBody);
 
-          const footer = el('div', 'syn-checkout-footer');
-          const retryBtn = el('button', 'syn-btn syn-btn-primary', 'Retry');
+          const { card: failCard, foot } = stepScaffold(root, 'Payment Failed');
+          const errBody = el('div', 'syn-form');
+          errBody.appendChild(el('div', 'syn-err', currentSession.message || 'Your payment failed.'));
+          failCard.appendChild(errBody);
+          const retryBtn = el('button', 'syn-btn syn-btn-primary', 'Retry') as HTMLButtonElement;
+          retryBtn.type = 'button';
           retryBtn.onclick = () => transitionTo('payment_method');
-          footer.appendChild(retryBtn);
-          cleanCard.appendChild(footer);
-          root.appendChild(cleanCard);
+          stepFooter(foot, null, retryBtn);
         }
       }
     } catch (err) {
@@ -2004,23 +2183,36 @@ function renderSuccessStep(
   const card = el('div', 'syn-card');
 
   const wrap = el('div', 'syn-success-wrap');
-  
-  const icon = el('div', 'syn-success-icon', '✓');
-  wrap.appendChild(icon);
-  
-  const title = el('div', 'syn-title syn-display', 'Order Confirmed!');
-  wrap.appendChild(title);
 
-  const msg = el('div', 'syn-muted', `Thank you for your purchase! Your order #${state.orderId} was successfully paid and placed.`);
-  wrap.appendChild(msg);
+  const halo = el('div', 'syn-success-halo');
+  const icon = el('div', 'syn-success-icon');
+  icon.innerHTML = SUCCESS_CHECK_SVG;
+  halo.appendChild(icon);
+  wrap.appendChild(halo);
 
-  const totalLine = el('div', 'syn-totline syn-totline-grand');
-  totalLine.style.marginTop = '10px';
-  totalLine.append(el('span', undefined, 'Total Paid:'), el('span', 'syn-price', state.checkoutModel?.total || model.total));
+  wrap.appendChild(el('div', 'syn-success-title', 'Order Confirmed!'));
+  wrap.appendChild(el('div', 'syn-success-msg', `Thank you for your purchase! Your order #${state.orderId} was successfully paid and placed.`));
+
+  const totalLine = el('div', 'syn-success-total');
+  const totalVal = el('b', undefined, state.checkoutModel?.total || model.total || '—');
+  totalLine.append(document.createTextNode('Total Paid  '), totalVal);
   wrap.appendChild(totalLine);
 
-  const doneBtn = el('button', 'syn-btn syn-btn-primary', 'Done');
-  doneBtn.style.marginTop = '20px';
+  // The estimate above can drift from what was actually charged (addons/shipping
+  // applied server-side). Fetch the real order total and correct the line in place.
+  if (state.orderId && state.delegationToken) {
+    void ctx.callTool('get_order', { site_id: state.siteId, order_id: state.orderId, buyer_delegation_token: state.delegationToken })
+      .then((res) => {
+        const t = (res?.structuredContent as any)?.total as { amount?: string; currency?: string } | undefined;
+        if (t?.amount) totalVal.textContent = `${t.currency ?? ''} ${t.amount}`.trim();
+      })
+      .catch(() => { /* keep the estimate */ });
+  }
+
+  const doneBtn = el('button', 'syn-btn syn-btn-primary', 'Done') as HTMLButtonElement;
+  doneBtn.type = 'button';
+  doneBtn.style.marginTop = '12px';
+  doneBtn.style.minWidth = '150px';
   doneBtn.onclick = async () => {
     const orderId = state.orderId;
     const siteId = state.siteId;
@@ -2067,26 +2259,27 @@ function renderSuccessStep(
 /** Render a compact in-frame order-status panel (after Done fetches the order). */
 function renderOrderStatusPanel(root: HTMLElement, order: Record<string, unknown> | undefined, fallbackOrderId?: string): void {
   root.replaceChildren();
-  const card = el('div', 'syn-card syn-card-product');
-  const body = el('div', 'syn-body');
+  const card = el('div', 'syn-card');
 
   const wrap = el('div', 'syn-success-wrap');
-  wrap.appendChild(el('div', 'syn-success-icon', '✓'));
-  wrap.appendChild(el('div', 'syn-title syn-display', 'Order Confirmed!'));
+  const halo = el('div', 'syn-success-halo');
+  const icon = el('div', 'syn-success-icon');
+  icon.innerHTML = SUCCESS_CHECK_SVG;
+  halo.appendChild(icon);
+  wrap.appendChild(halo);
+  wrap.appendChild(el('div', 'syn-success-title', 'Order Confirmed!'));
 
   const orderId = (order?.order_id as string) ?? fallbackOrderId ?? '';
   const status = (order?.status as string) ?? 'processing';
-  wrap.appendChild(el('div', 'syn-muted', `Order #${orderId} — ${status}`));
+  wrap.appendChild(el('div', 'syn-success-msg', `Order #${orderId} — ${status}`));
 
   const total = order?.total as { amount?: string; currency?: string } | undefined;
   if (total?.amount) {
-    const tot = el('div', 'syn-totline syn-totline-grand');
-    tot.style.marginTop = '12px';
-    tot.append(el('span', undefined, 'Total Paid'), el('span', 'syn-price', `${total.currency ?? ''} ${total.amount}`.trim()));
+    const tot = el('div', 'syn-success-total');
+    tot.append(document.createTextNode('Total Paid  '), el('b', undefined, `${total.currency ?? ''} ${total.amount}`.trim()));
     wrap.appendChild(tot);
   }
 
-  body.appendChild(wrap);
-  card.appendChild(body);
+  card.appendChild(wrap);
   root.appendChild(card);
 }

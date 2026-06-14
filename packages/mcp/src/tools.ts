@@ -152,8 +152,14 @@ export const addToCart: ToolImplementation = async (client, args) => {
   // Ensure a cart exists. The cart_id is supplied by the caller (model context /
   // View); only create one if none was provided.
   if (!cart_id) {
-    const created = await client.cart.create(site_id as string);
-    cart_id = created.cart_id;
+    // Try to resume an existing in-progress cart first (preserves prior items).
+    const active = await client.cart.getActive(site_id as string).catch(() => null);
+    if (active && (active as any).cart_id) {
+      cart_id = (active as any).cart_id;
+    } else {
+      const created = await client.cart.create(site_id as string);
+      cart_id = created.cart_id;
+    }
   }
 
   let updatedCart;
@@ -161,10 +167,15 @@ export const addToCart: ToolImplementation = async (client, args) => {
     updatedCart = await client.cart.addItem(site_id as string, cart_id, item);
   } catch (err) {
     // The cart was consumed/expired (e.g. after a checkout or failed payment in the
-    // same session). Create a fresh cart and retry once so the buyer can keep shopping.
+    // same session). Try to resume from buyer_carts first; fall back to a fresh cart.
     if (isCartNotFound(err)) {
-      const created = await client.cart.create(site_id as string);
-      cart_id = created.cart_id;
+      const active = await client.cart.getActive(site_id as string).catch(() => null);
+      if (active && (active as any).cart_id) {
+        cart_id = (active as any).cart_id;
+      } else {
+        const created = await client.cart.create(site_id as string);
+        cart_id = created.cart_id;
+      }
       updatedCart = await client.cart.addItem(site_id as string, cart_id, item);
     } else {
       throw err;
@@ -188,6 +199,30 @@ export const removeFromCart: ToolImplementation = async (client, args) => {
   const updatedCart = await client.cart.removeItem(site_id as string, cart_id as string, item_id as string);
   const c = updatedCart as any;
   const cartModel = buildCartCard(c, site_id as string);
+  return cardResult(cartModel);
+};
+
+/**
+ * Tool: Set a cart line's quantity (live, server-side; checkout reads the server cart).
+ */
+export const setCartQuantity: ToolImplementation = async (client, args) => {
+  const { site_id, cart_id, item_id, quantity } = args;
+
+  if (!site_id || !cart_id || !item_id || quantity == null) {
+    throw new Error('site_id, cart_id, item_id, and quantity are required');
+  }
+  const qty = Number(quantity);
+  if (!Number.isInteger(qty) || qty < 0) {
+    throw new Error('quantity must be a non-negative integer');
+  }
+
+  const updatedCart = await client.cart.setItemQuantity(
+    site_id as string,
+    cart_id as string,
+    item_id as string,
+    qty,
+  );
+  const cartModel = buildCartCard(updatedCart as any, site_id as string);
   return cardResult(cartModel);
 };
 
@@ -218,6 +253,22 @@ export const getCart: ToolImplementation = async (client, args) => {
 
   const cart = await client.cart.get(site_id, cart_id);
   const c = cart as any;
+  const cartModel = buildCartCard(c, site_id);
+  return cardResult(cartModel);
+};
+
+/**
+ * Tool: Get active (in-progress) cart for a site — resumes a shopping conversation.
+ */
+export const getActiveCart: ToolImplementation = async (client, args) => {
+  const site_id = args.site_id as string | undefined;
+  if (!site_id) throw new Error('site_id is required');
+
+  const result = await client.cart.getActive(site_id);
+  const c = result as any;
+  if (!c || !c.cart_id) {
+    return JSON.stringify({ cart: null, message: 'No active cart found for this site.' });
+  }
   const cartModel = buildCartCard(c, site_id);
   return cardResult(cartModel);
 };
@@ -631,8 +682,10 @@ export const TOOL_IMPLEMENTATIONS: Record<string, ToolImplementation> = {
   create_cart: createCart,
   add_to_cart: addToCart,
   remove_from_cart: removeFromCart,
+  set_cart_quantity: setCartQuantity,
   apply_coupon: applyCoupon,
   get_cart: getCart,
+  get_active_cart: getActiveCart,
   set_shipping_address: setShippingAddress,
   select_shipping_option: selectShippingOption,
   execute_checkout: executeCheckout,

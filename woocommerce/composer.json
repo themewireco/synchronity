@@ -1,0 +1,25 @@
+{
+  "name": "agentmesh/woocommerce-connector",
+  "description": "Synchronity WooCommerce Connector Plugin",
+  "type": "wordpress-plugin",
+  "require": {
+    "php": ">=8.2"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^11.0",
+    "wp-coding-standards/wpcs": "^3.0",
+    "yoast/phpunit-polyfills": "^3.0"
+  },
+  "config": {
+    "allow-plugins": {
+      "dealerdirect/phpcodesniffer-composer-installer": true
+    }
+  },
+  "autoload": {
+    "classmap": ["includes/", "admin/"]
+  },
+  "scripts": {
+    "test": "vendor/bin/phpunit --configuration phpunit.xml",
+    "lint": "vendor/bin/phpcs --standard=WordPress includes/ admin/"
+  }
+}

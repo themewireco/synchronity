@@ -2,6 +2,9 @@
   "name": "@synchronity/mcp-server",
   "version": "0.1.1",
   "description": "Synchronity MCP Server - Exposes all 11 Synchronity tools as Model Context Protocol endpoints for Claude, ChatGPT, and other LLM agents",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -18,7 +21,8 @@
     }
   },
   "bin": {
-    "synchronity-mcp": "./dist/index.js"
+    "synchronity-mcp": "./dist/index.js",
+    "agentmesh-mcp": "./dist/index.js"
   },
   "scripts": {
     "build": "tsup",
@@ -28,29 +32,24 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@modelcontextprotocol/ext-apps": "^1.7.4",
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@synchronity/sdk": "file:../sdk",
-    "zod": "^3.24.0",
-    "@modelcontextprotocol/ext-apps": "^1.7.4"
+    "@synchronity/sdk": "file:../typescript",
+    "zod": "^3.24.0"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
-    "typescript": "^5.7.0",
+    "jsdom": "^29.1.1",
     "tsup": "^8.3.0",
-    "vitest": "^2.1.0"
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.8"
   },
   "keywords": [
-    "synchronity",
+    "agentmesh",
     "mcp",
     "claude",
     "ai",
     "agents"
   ],
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/themewireco/synchronity"
-  },
-  "homepage": "https://synchronity.app",
-  "author": "Themewire"
+  "license": "UNLICENSED"
 }

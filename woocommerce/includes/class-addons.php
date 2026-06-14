@@ -102,18 +102,50 @@ class AgentMesh_Addons {
 			// exactly as before. Additive either way.
 			if ( 'repeater' === $acf_type && self::grouped_enabled() && self::is_grouped_repeater( $field ) ) {
 				foreach ( self::map_grouped_repeater( $field, $field_name, $product, $currency, $price_map ) as $grouped ) {
-					$addons[] = $grouped;
+					if ( self::is_buyer_facing( $grouped, $price_map ) ) {
+						$addons[] = $grouped;
+					}
 				}
 				continue;
 			}
 
 			$addon = self::map_field( $field, $field_name, $acf_type, $product, $currency, $price_map );
-			if ( null !== $addon ) {
+			if ( null !== $addon && self::is_buyer_facing( $addon, $price_map ) ) {
 				$addons[] = $addon;
 			}
 		}
 
 		return $addons;
+	}
+
+	/**
+	 * Is this add-on something a buyer should act on (vs. pure vendor metadata)?
+	 *
+	 * True when it is a CHOICE type (select/radio/checkbox) OR when it has a price
+	 * attached — either via an option `price_modifier`, or via a merchant
+	 * `agentmesh_addon_price_map` entry keyed by the field name. Non-choice free-form
+	 * fields (text/number/boolean) with no price are dropped as vendor metadata.
+	 */
+	private static function is_buyer_facing( array $addon, array $price_map ): bool {
+		$type = (string) ( $addon['type'] ?? '' );
+		if ( in_array( $type, [ 'select', 'radio', 'checkbox' ], true ) ) {
+			return true;
+		}
+
+		if ( isset( $addon['options'] ) && is_array( $addon['options'] ) ) {
+			foreach ( $addon['options'] as $opt ) {
+				if ( is_array( $opt ) && isset( $opt['price_modifier'] ) ) {
+					return true;
+				}
+			}
+		}
+
+		$addon_id = (string) ( $addon['addon_id'] ?? '' );
+		if ( '' !== $addon_id && isset( $price_map[ $addon_id ] ) ) {
+			return true;
+		}
+
+		return false;
 	}
 
 	/** Opt-in: expand nested "grouped" repeaters into per-row add-ons. Default OFF. */

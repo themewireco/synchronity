@@ -53,6 +53,7 @@ class AgentMesh_Checkout {
 		$billing_address     = $request->get_param( 'billing_address' ) ?: $shipping_address;
 		$customer_email      = sanitize_email( $request->get_param( 'customer_email' ) ?: '' );
 		$customer_name       = sanitize_text_field( $request->get_param( 'customer_name' ) ?: '' );
+		$customer_phone      = sanitize_text_field( $request->get_param( 'customer_phone' ) ?: '' );
 		$buyer_token         = sanitize_text_field( $request->get_param( 'buyer_delegation_token' ) ?: '' );
 		$notes               = sanitize_textarea_field( $request->get_param( 'notes' ) ?: '' );
 		$human_sub           = sanitize_text_field( $request->get_param( 'human_sub' ) ?: '' );
@@ -93,7 +94,7 @@ class AgentMesh_Checkout {
 
 		// Create the WC order
 		try {
-			$order = $this->build_order( $cart_data, $shipping_address, $billing_address, $customer_email, $customer_name, $notes );
+			$order = $this->build_order( $cart_data, $shipping_address, $billing_address, $customer_email, $customer_name, $notes, $customer_phone );
 		} catch ( AgentMesh_Addon_Exception $e ) {
 			$r = new WP_REST_Response(
 				AgentMesh_Auth::error_response( $e->error_code, $e->getMessage() ),
@@ -205,7 +206,7 @@ class AgentMesh_Checkout {
 	/**
 	 * @throws Exception on order creation failure.
 	 */
-	private function build_order( array $cart_data, array $shipping_address, array $billing_address, string $email, string $customer_name, string $notes ): WC_Order {
+	private function build_order( array $cart_data, array $shipping_address, array $billing_address, string $email, string $customer_name, string $notes, string $customer_phone = '' ): WC_Order {
 		$order = wc_create_order();
 		if ( is_wp_error( $order ) ) {
 			throw new Exception( $order->get_error_message() );
@@ -253,6 +254,9 @@ class AgentMesh_Checkout {
 		$wc_billing['first_name'] = $wc_billing['first_name'] ?: $name_parts[0];
 		$wc_billing['last_name']  = $wc_billing['last_name'] ?: $name_parts[1];
 		$wc_billing['email']      = $email ?: $wc_billing['email'];
+		// Phone: prefer billing address phone, fall back to the shipping address
+		// phone, then the top-level customer_phone captured at checkout.
+		$wc_billing['phone']      = $wc_billing['phone'] ?: ( $shipping_address['phone'] ?? '' ) ?: $customer_phone;
 
 		$order->set_address( $wc_billing, 'billing' );
 		$order->set_address( AgentMesh_Normaliser::amps_address_to_wc( $shipping_address ), 'shipping' );
