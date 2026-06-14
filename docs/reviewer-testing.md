@@ -51,21 +51,29 @@ Send these prompts to the assistant. Each lists the tool(s) it should call and w
 | 2 | "Show me the details." | `get_product` | Product details, image, and any options/add-ons. |
 | 3 | "Add it to a cart." | `create_cart`, `add_to_cart` | A cart is created with the cake and a running total. |
 | 4 | "Show my cart." | `get_cart` | Item, quantity, subtotal. |
-| 5 | "Apply the coupon `testcoupon`." | `apply_coupon` | Discount applied; cart total drops. |
-| 6 | "Ship to **[name, address, city, country]**." | `set_shipping_address` | Shipping options returned. |
-| 7 | "Use the cheapest shipping option." | `select_shipping_option` | Total updates to include shipping. |
-| 8 | "Check out." | `request_delegation` → `execute_checkout` | The assistant asks for **buyer approval** before completing — a 6-digit code is emailed to the buyer (see §1). |
-| 9 | "The approval code is **[code from email]**." | `submit_delegation_otp` (or `check_delegation`) | Approval succeeds; the order is placed. |
-| 10 | "Pay with mobile money." | `get_payment_methods`, `initiate_payment` | A Paystack mobile-money charge starts for MTN number `0551234987` (see §1). |
-| 11 | Approve on the phone / enter OTP `123456` if prompted. | `submit_payment_otp`, `get_payment_status` | Payment succeeds; the order is confirmed. |
-| 12 | "Show me the order." | `get_order` / `list_orders` | The completed order with status and total. |
+| 5 | "Make it 2." | `set_cart_quantity` | Line quantity updates to 2; total recalculates. |
+| 6 | "Apply the coupon `testcoupon`." | `apply_coupon` | Discount applied; cart total drops. |
+| 7 | "Ship to **[name, address, city, country]**." | `set_shipping_address` | Shipping options returned. |
+| 8 | "Use the cheapest shipping option." | `select_shipping_option` | Total updates to include shipping. |
+| 9 | "Check out." | `request_delegation` → `execute_checkout` | The assistant asks for **buyer approval** before completing — a 6-digit code is emailed to the buyer (see §1). |
+| 10 | "The approval code is **[code from email]**." | `submit_delegation_otp` (or `check_delegation`) | Approval succeeds; the order is placed. |
+| 11 | "Pay with mobile money." | `get_payment_methods`, `initiate_payment` | A Paystack mobile-money charge starts for MTN number `0551234987` (see §1). |
+| 12 | Approve on the phone / enter OTP `123456` if prompted. | `submit_payment_otp`, `get_payment_status` | Payment succeeds; the order is confirmed. |
+| 13 | "Show me the order." | `get_order` / `list_orders` | The completed order with status and total. |
+
+### 3a. Also exercise these tools
+
+| Prompt to the assistant | Tool | Expected result |
+|---|---|---|
+| "Notify me when **[an out-of-stock item]** is back in stock — my email is **[reviewer-buyer@example.com]**." | `request_back_in_stock` | Confirms you'll be emailed when it restocks (records the request for the merchant). |
+| Start a new chat, then: "**Using Synchronity, resume my Sorella Bakery cart.**" | `get_active_cart` | The in-progress cart from the flow above is restored (items + total), not a fresh empty cart. |
 
 ---
 
 ## 4. What we want you to verify
 
 - **Human-in-the-loop:** checkout cannot complete without the buyer-entered approval code (steps 8–9). An agent cannot self-approve.
-- **Scoped, safe actions:** read-only tools (search, product, cart view, orders) carry `readOnlyHint`; checkout/payment carry `destructiveHint`.
+- **Scoped, safe actions:** read-only tools (search, product, cart view, orders) carry `readOnlyHint`; deletion + payment tools (`remove_from_cart`, `set_cart_quantity`, `execute_checkout`, `initiate_payment`, `submit_payment_otp`) carry `destructiveHint: true`.
 - **No raw data dumps:** product/cart/order results render as clean Markdown (with inline product images), not JSON.
 
 ---
