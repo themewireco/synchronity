@@ -1174,6 +1174,13 @@ export interface CheckoutState {
   };
   orderId?: string;
   paymentMethod?: 'mobile_money' | 'card';
+  /** Chosen payment gateway id (e.g. 'paystack' | 'stripe'); undefined for legacy single-gateway stores. */
+  gateway?: string;
+  /** Cached gateway list from get_payment_methods so re-rendering the channel step needs no refetch.
+   *  Persisted in sessionStorage with the rest of CheckoutState; cleared on tab close. A gateway
+   *  disabled mid-session is handled defensively at channel-render time (stale choice → re-pick).
+   *  `mobile_money_providers` is reserved for a future dynamic provider list; v1 hardcodes mtn/vod/tgo. */
+  gatewayOptions?: Array<{ id?: string; label: string; channels: string[]; mobile_money_providers?: string[] }>;
   paymentSession?: any;
 }
 
@@ -1868,23 +1875,54 @@ function renderPaymentMethodStep(
   transitionTo: (step: CheckoutState['step']) => void,
   saveState: () => void,
 ): void {
-  {
-    const { card } = stepScaffold(root, 'Select Payment Option');
-    const body = el('div', 'syn-loader-wrap');
-    body.appendChild(el('div', 'syn-loader'));
-    body.appendChild(el('div', 'syn-verify', 'Fetching payment options…'));
-    card.appendChild(body);
-  }
+  // Render the channel tiles for a resolved gateway list (no refetch).
+  const renderChannels = (
+    gateways: NonNullable<CheckoutState['gatewayOptions']>,
+  ): void => {
+    const multi = gateways.length > 1;
 
-  ctx.callTool('get_payment_methods', {
-    site_id: state.siteId,
-    order_id: state.orderId,
-  }).then((res) => {
-    if (res.isError) throw new Error(textOf(res) || 'Failed to load payment methods');
+    // Step A — gateway picker (only when >1 enabled AND none chosen yet).
+    if (multi && !state.gateway) {
+      const { card, foot } = stepScaffold(root, 'Choose Payment Provider');
+      const list = el('div', 'syn-options');
+      for (const g of gateways) {
+        const item = el('button', 'syn-option') as HTMLButtonElement;
+        item.type = 'button';
+        const main = el('div', 'syn-opt-main');
+        main.appendChild(el('div', 'ttl', g.label));
+        main.appendChild(el('div', 'sub', `Pay with ${g.label}.`));
+        item.appendChild(main);
+        item.onclick = () => {
+          state.gateway = g.id;
+          saveState();
+          renderPaymentMethodStep(root, model, ctx, state, transitionTo, saveState);
+        };
+        list.appendChild(item);
+      }
+      card.appendChild(list);
+      const backBtn = el('button', 'syn-btn syn-btn-ghost', 'Back') as HTMLButtonElement;
+      backBtn.type = 'button';
+      backBtn.onclick = () => transitionTo('customer_info');
+      foot.appendChild(backBtn);
+      return;
+    }
 
-    const sc = res.structuredContent as any;
-    const channels = sc?.channels || ['mobile_money', 'card'];
+    // Resolve the active gateway: the chosen one, else the single/implicit one.
+    // If a previously-chosen gateway is no longer in the list (e.g. the merchant
+    // disabled it mid-session), clear the stale choice and re-show the picker rather
+    // than silently routing to the wrong gateway (which would fail at initiate).
+    if (state.gateway != null && !gateways.some((g) => g.id === state.gateway)) {
+      state.gateway = undefined;
+      saveState();
+      renderChannels(gateways);
+      return;
+    }
+    const active = (state.gateway != null
+      ? gateways.find((g) => g.id === state.gateway)
+      : undefined) ?? gateways[0];
+    const channels = active?.channels?.length ? active.channels : ['mobile_money', 'card'];
 
+    // Step B — channel picker for the active gateway.
     const { card, foot } = stepScaffold(root, 'Select Payment Option');
     const list = el('div', 'syn-options');
 
@@ -1895,7 +1933,7 @@ function renderPaymentMethodStep(
       main.appendChild(el('div', 'ttl', channel === 'mobile_money' ? 'Mobile Money' : 'Credit / Debit Card'));
       main.appendChild(el('div', 'sub', channel === 'mobile_money'
         ? 'Pay directly from your MTN, Telecel, or AirtelTigo account.'
-        : 'Secure online payment powered by Paystack.'));
+        : `Secure online payment powered by ${active?.label ?? 'our payment provider'}.`));
       item.appendChild(main);
 
       item.onclick = async () => {
@@ -1911,6 +1949,7 @@ function renderPaymentMethodStep(
               site_id: state.siteId,
               order_id: state.orderId,
               channel: 'card',
+              ...(state.gateway ? { gateway: state.gateway } : {}),
               buyer_delegation_token: state.delegationToken,
             });
             if (initRes.isError) throw new Error(textOf(initRes) || 'Failed to initiate card payment');
@@ -1929,11 +1968,58 @@ function renderPaymentMethodStep(
     }
     card.appendChild(list);
 
+    // Back: from a chosen gateway in a multi list → back to the gateway picker;
+    // otherwise → customer_info.
     const backBtn = el('button', 'syn-btn syn-btn-ghost', 'Back') as HTMLButtonElement;
     backBtn.type = 'button';
-    backBtn.onclick = () => transitionTo('customer_info');
+    backBtn.onclick = () => {
+      if (multi && state.gateway != null) {
+        state.gateway = undefined;
+        saveState();
+        renderPaymentMethodStep(root, model, ctx, state, transitionTo, saveState);
+      } else {
+        transitionTo('customer_info');
+      }
+    };
     foot.appendChild(backBtn);
+  };
 
+  // Use the cached gateway list if we already fetched it this session.
+  if (state.gatewayOptions) {
+    renderChannels(state.gatewayOptions);
+    return;
+  }
+
+  {
+    const { card } = stepScaffold(root, 'Select Payment Option');
+    const body = el('div', 'syn-loader-wrap');
+    body.appendChild(el('div', 'syn-loader'));
+    body.appendChild(el('div', 'syn-verify', 'Fetching payment options…'));
+    card.appendChild(body);
+  }
+
+  ctx.callTool('get_payment_methods', {
+    site_id: state.siteId,
+    order_id: state.orderId,
+  }).then((res) => {
+    if (res.isError) throw new Error(textOf(res) || 'Failed to load payment methods');
+
+    const sc = res.structuredContent as any;
+    const rawGateways = Array.isArray(sc?.gateways) ? sc.gateways : [];
+    // Normalize to the cached shape; synthesize a single implicit gateway from the
+    // legacy flat `channels` when the connector returns no `gateways[]`.
+    const gateways: NonNullable<CheckoutState['gatewayOptions']> = rawGateways.length
+      ? rawGateways.map((g: any) => ({
+          id: g.id,
+          label: g.label ?? g.id ?? 'Payment provider',
+          channels: Array.isArray(g.channels) && g.channels.length ? g.channels : (sc?.channels ?? ['mobile_money', 'card']),
+          mobile_money_providers: g.mobile_money_providers,
+        }))
+      : [{ id: undefined, label: 'Paystack', channels: sc?.channels ?? ['mobile_money', 'card'] }];
+
+    state.gatewayOptions = gateways;
+    saveState();
+    renderChannels(gateways);
   }).catch((err) => {
     const { card, foot } = stepScaffold(root, 'Payment Method Error');
     const errBody = el('div', 'syn-form');
@@ -2003,6 +2089,7 @@ function renderPaymentInitiateMMStep(
         channel: 'mobile_money',
         phone: phone,
         provider: provider,
+        ...(state.gateway ? { gateway: state.gateway } : {}),
         buyer_delegation_token: state.delegationToken,
       });
 
