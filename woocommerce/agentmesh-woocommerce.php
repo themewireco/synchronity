@@ -3,7 +3,7 @@
  * Plugin Name: Synchronity for WooCommerce
  * Plugin URI: https://agentmesh.io
  * Description: Connect your WooCommerce store to the Synchronity network — enabling AI agents to discover, search, and purchase from your store.
- * Version: 0.4.2
+ * Version: 0.4.3
  * Author: Themewire
  * License: Proprietary
  * Requires at least: 6.0
@@ -14,7 +14,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'AGENTMESH_VERSION', '0.4.2' );
+define( 'AGENTMESH_VERSION', '0.4.3' );
 define( 'AGENTMESH_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'AGENTMESH_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 define( 'AGENTMESH_REST_NAMESPACE', 'agentmesh/v1' );

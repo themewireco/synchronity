@@ -57,7 +57,7 @@ async function toDataUri(url: string): Promise<string | undefined> {
   }
 }
 
-/** Collect every image URL referenced by a card model (for product/productList). */
+/** Collect every image URL referenced by a card model. */
 function collectUrls(model: CardModel): string[] {
   const urls = new Set<string>();
   if (model.kind === 'product') {
@@ -66,6 +66,10 @@ function collectUrls(model: CardModel): string[] {
     for (const v of model.variants ?? []) if (v.image) urls.add(v.image);
   } else if (model.kind === 'productList') {
     for (const p of model.products) if (p.image) urls.add(p.image);
+  } else if (model.kind === 'cart' || model.kind === 'checkout') {
+    // Cart/checkout line thumbnails need the same data: URI treatment so they
+    // render in the Claude sandbox (remote URLs are blocked there).
+    for (const it of model.items) if (it.image) urls.add(it.image);
   }
   return [...urls];
 }
@@ -98,6 +102,8 @@ export async function inlineCardImages<T extends CardModel>(model: T): Promise<T
     for (const v of model.variants ?? []) if (v.image && map.has(v.image)) v.image = map.get(v.image);
   } else if (model.kind === 'productList') {
     for (const p of model.products) if (p.image && map.has(p.image)) p.image = map.get(p.image);
+  } else if (model.kind === 'cart' || model.kind === 'checkout') {
+    for (const it of model.items) if (it.image && map.has(it.image)) it.image = map.get(it.image);
   }
   return model;
 }

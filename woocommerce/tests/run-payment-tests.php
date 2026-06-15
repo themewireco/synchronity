@@ -536,6 +536,241 @@ ok( ! isset( AgentMesh_Normaliser::payment_session_to_amps( $o, [ 'channel' => '
 echo "\n";
 
 // ─────────────────────────────────────────────────────────────────
+// Provider identity + enablement
+// ─────────────────────────────────────────────────────────────────
+echo "Provider identity + enablement:\n";
+
+reset_world();
+$GLOBALS['_agentmesh_options']['woocommerce_paystack_settings'] = [ 'testmode' => 'yes', 'test_secret_key' => 'sk_test_123' ];
+$prov = new AgentMesh_Paystack_Provider();
+eq( 'paystack', $prov->id(), 'paystack id()' );
+eq( 'Paystack', $prov->label(), 'paystack label()' );
+ok( $prov->is_configured(), 'paystack configured when keys present' );
+
+reset_world(); // no keys — clear paystack fallback key so get_secret_key() returns ''
+$GLOBALS['_agentmesh_options']['agentmesh_paystack_test_secret_key'] = '';
+$prov = new AgentMesh_Paystack_Provider();
+ok( ! $prov->is_configured(), 'paystack not configured without keys' );
+
+// Case 1: configured + option present and 'yes' → enabled
+reset_world();
+$GLOBALS['_agentmesh_options']['agentmesh_payment_enable_paystack'] = 'yes';
+$prov = new AgentMesh_Paystack_Provider();
+ok( $prov->is_enabled(), 'paystack enabled when configured + option yes' );
+
+// Case 2: configured but option explicitly 'no' → not enabled
+reset_world();
+$GLOBALS['_agentmesh_options']['agentmesh_payment_enable_paystack'] = 'no';
+$prov = new AgentMesh_Paystack_Provider();
+ok( ! $prov->is_enabled(), 'paystack not enabled when option is no' );
+
+// Case 3: not configured → not enabled regardless of option
+reset_world();
+$GLOBALS['_agentmesh_options']['agentmesh_paystack_test_secret_key'] = '';
+$GLOBALS['_agentmesh_options']['agentmesh_payment_enable_paystack'] = 'yes';
+$prov = new AgentMesh_Paystack_Provider();
+ok( ! $prov->is_enabled(), 'paystack not enabled without keys even if option is yes' );
+
+echo "\n";
+
+// ─────────────────────────────────────────────────────────────────
+// Stripe provider
+// ─────────────────────────────────────────────────────────────────
+echo "Stripe provider:\n";
+
+reset_world();
+$GLOBALS['_agentmesh_options']['agentmesh_stripe_mode'] = 'test';
+$GLOBALS['_agentmesh_options']['agentmesh_stripe_test_secret_key'] = 'sk_test_STRIPE';
+$GLOBALS['_agentmesh_options']['agentmesh_payment_enable_stripe'] = 'yes';
+
+$stripe = new AgentMesh_Stripe_Provider();
+eq( 'stripe', $stripe->id(), 'stripe id()' );
+ok( $stripe->is_configured(), 'stripe configured when secret present' );
+ok( $stripe->is_enabled(), 'stripe enabled when configured + toggled' );
+
+// initiate card → Checkout Session url
+$o = new WC_Order( 70, 80.0, 'USD' );
+$GLOBALS['_orders'][70] = $o;
+_queue_http( [ 'id' => 'cs_test_abc', 'url' => 'https://checkout.stripe.com/c/pay/cs_test_abc' ] );
+$session = $stripe->initiate( $o, 'card', [] );
+eq( 'awaiting_user', $session['payment_status'], 'stripe initiate awaiting_user' );
+eq( 'https://checkout.stripe.com/c/pay/cs_test_abc', $session['instruction']['authorization_url'], 'stripe authorization_url is session url' );
+$last = end( $GLOBALS['_http_calls'] );
+ok( str_contains( $last['url'], '/v1/checkout/sessions' ), 'stripe calls checkout sessions endpoint' );
+
+// mobile_money unsupported
+reset_world();
+$GLOBALS['_agentmesh_options']['agentmesh_stripe_test_secret_key'] = 'sk_test_STRIPE';
+$stripe = new AgentMesh_Stripe_Provider();
+$o = new WC_Order( 71, 80.0, 'USD' );
+$fail = $stripe->initiate( $o, 'mobile_money', [ 'phone' => '0551234567', 'provider' => 'mtn' ] );
+eq( 'failed', $fail['payment_status'], 'stripe rejects mobile_money' );
+
+// submit_otp unsupported
+$fotp = $stripe->submit_otp( $o, 'cs_test_abc', '1234' );
+eq( 'failed', $fotp['payment_status'], 'stripe rejects submit_otp' );
+
+// verify maps complete → success
+reset_world();
+$GLOBALS['_agentmesh_options']['agentmesh_stripe_test_secret_key'] = 'sk_test_STRIPE';
+$stripe = new AgentMesh_Stripe_Provider();
+_queue_http( [ 'id' => 'cs_test_abc', 'status' => 'complete', 'payment_status' => 'paid', 'amount_total' => 8000, 'currency' => 'usd' ] );
+$v = $stripe->verify( 'cs_test_abc' );
+eq( 'success', $v['status'], 'stripe verify complete → success' );
+eq( 80.0, $v['amount'], 'stripe verify amount from subunits' );
+
+// verify maps expired → failed
+reset_world();
+$GLOBALS['_agentmesh_options']['agentmesh_stripe_test_secret_key'] = 'sk_test_STRIPE';
+$stripe = new AgentMesh_Stripe_Provider();
+_queue_http( [ 'id' => 'cs_test_abc', 'status' => 'expired', 'payment_status' => 'unpaid', 'amount_total' => 8000, 'currency' => 'usd' ] );
+$v = $stripe->verify( 'cs_test_abc' );
+eq( 'failed', $v['status'], 'stripe verify expired → failed' );
+
+// verify maps open/unpaid → pending
+reset_world();
+$GLOBALS['_agentmesh_options']['agentmesh_stripe_test_secret_key'] = 'sk_test_STRIPE';
+$stripe = new AgentMesh_Stripe_Provider();
+_queue_http( [ 'id' => 'cs_test_abc', 'status' => 'open', 'payment_status' => 'unpaid', 'amount_total' => 8000, 'currency' => 'usd' ] );
+$v = $stripe->verify( 'cs_test_abc' );
+eq( 'pending', $v['status'], 'stripe verify open → pending' );
+
+// webhook signature: invalid when no secret/sig
+reset_world();
+$stripe = new AgentMesh_Stripe_Provider();
+$req = new WP_REST_Request();
+$req->set_body( '{"type":"checkout.session.completed"}' );
+$parsed = $stripe->parse_webhook( $req );
+ok( ! $parsed['valid'], 'stripe webhook invalid without signature' );
+
+// webhook valid with correct HMAC signature
+reset_world();
+$GLOBALS['_agentmesh_options']['agentmesh_stripe_webhook_secret'] = 'whsec_test';
+$stripe = new AgentMesh_Stripe_Provider();
+$wbody = '{"type":"checkout.session.completed","data":{"object":{"id":"cs_x","amount_total":5000,"currency":"usd"}}}';
+$wts   = (string) time();
+$wsig  = 't=' . $wts . ',v1=' . hash_hmac( 'sha256', $wts . '.' . $wbody, 'whsec_test' );
+$req = new WP_REST_Request();
+$req->set_header( 'stripe-signature', $wsig );
+$req->set_body( $wbody );
+$parsed = $stripe->parse_webhook( $req );
+ok( $parsed['valid'], 'stripe webhook valid with correct HMAC' );
+eq( 'checkout.session.completed', $parsed['event'], 'stripe webhook event parsed' );
+eq( 'cs_x', $parsed['reference'], 'stripe webhook reference parsed' );
+
+echo "\n";
+
+// ─────────────────────────────────────────────────────────────────
+// Gateway registry
+// ─────────────────────────────────────────────────────────────────
+echo "Gateway registry:\n";
+
+reset_world();
+$GLOBALS['_agentmesh_options']['woocommerce_paystack_settings'] = [ 'testmode' => 'yes', 'test_secret_key' => 'sk_test_123' ];
+$GLOBALS['_agentmesh_options']['agentmesh_stripe_test_secret_key'] = 'sk_test_STRIPE';
+$GLOBALS['_agentmesh_options']['agentmesh_payment_enable_stripe'] = 'yes';
+
+$reg = new AgentMesh_Payment_Gateways();
+$ids = array_map( fn( $p ) => $p->id(), $reg->enabled() );
+ok( in_array( 'paystack', $ids, true ), 'registry enables configured paystack' );
+ok( in_array( 'stripe', $ids, true ), 'registry enables configured+toggled stripe' );
+eq( 'stripe', $reg->get( 'stripe' )->id(), 'registry get(stripe)' );
+eq( 'paystack', $reg->default()->id(), 'registry default is paystack (first registered)' );
+
+reset_world(); // only paystack fallback keys; stripe not configured
+$reg = new AgentMesh_Payment_Gateways();
+$ids2 = array_map( fn( $p ) => $p->id(), $reg->enabled() );
+ok( ! in_array( 'stripe', $ids2, true ), 'stripe not enabled when not configured' );
+ok( null === $reg->get( 'stripe' ), 'registry get(stripe) null when disabled' );
+
+echo "\n";
+
+// ─────────────────────────────────────────────────────────────────
+// Aggregated methods + gateway routing
+// ─────────────────────────────────────────────────────────────────
+echo "Aggregated methods + gateway routing:\n";
+
+reset_world();
+$GLOBALS['_agentmesh_options']['woocommerce_paystack_settings'] = [ 'testmode' => 'yes', 'test_secret_key' => 'sk_test_123' ];
+$GLOBALS['_agentmesh_options']['agentmesh_stripe_test_secret_key'] = 'sk_test_STRIPE';
+$GLOBALS['_agentmesh_options']['agentmesh_payment_enable_stripe'] = 'yes';
+
+$o = new WC_Order( 80, 50.0, 'GHS' );
+$GLOBALS['_orders'][80] = $o;
+$payments = new AgentMesh_Payments();
+$req = new WP_REST_Request();
+$req->set_param( 'order_id', 80 );
+$resp = $payments->get_methods( $req );
+$data = $resp->get_data();
+ok( isset( $data['gateways'] ), 'methods returns gateways[]' );
+$gw_ids = array_map( fn( $g ) => $g['id'], $data['gateways'] );
+ok( in_array( 'paystack', $gw_ids, true ) && in_array( 'stripe', $gw_ids, true ), 'both gateways listed' );
+ok( isset( $data['methods'] ), 'legacy flat methods retained' );
+
+// initiate routes to stripe when gateway=stripe
+$req2 = new WP_REST_Request();
+$req2->set_param( 'order_id', 80 );
+$req2->set_param( 'gateway', 'stripe' );
+$req2->set_param( 'channel', 'card' );
+_queue_http( [ 'id' => 'cs_test_xyz', 'url' => 'https://checkout.stripe.com/c/pay/cs_test_xyz' ] );
+$ir = $payments->initiate( $req2 );
+$idata = $ir->get_data();
+eq( 'awaiting_user', $idata['payment_status'], 'stripe initiate via registry' );
+$last = end( $GLOBALS['_http_calls'] );
+ok( str_contains( $last['url'], 'api.stripe.com' ), 'routed to stripe API' );
+
+echo "\n";
+
+// ─────────────────────────────────────────────────────────────────
+// Stripe webhook handler
+// ─────────────────────────────────────────────────────────────────
+echo "Stripe webhook handler:\n";
+
+// invalid signature → 401
+reset_world();
+$GLOBALS['_agentmesh_options']['agentmesh_stripe_webhook_secret'] = 'whsec_test';
+$payments = new AgentMesh_Payments();
+$req = new WP_REST_Request();
+$req->set_header( 'stripe-signature', 't=1,v1=deadbeef' );
+$req->set_body( '{"type":"checkout.session.completed","data":{"object":{"id":"cs_w1"}}}' );
+$resp = $payments->handle_stripe_webhook( $req );
+eq( 401, $resp->get_status(), 'stripe webhook bad signature → 401' );
+
+// valid completed webhook advances a matching order to paid + stamps gateway
+reset_world();
+$GLOBALS['_agentmesh_options']['agentmesh_stripe_webhook_secret'] = 'whsec_test';
+$GLOBALS['_agentmesh_options']['agentmesh_stripe_test_secret_key'] = 'sk_test_STRIPE';
+$GLOBALS['_agentmesh_options']['agentmesh_payment_enable_stripe'] = 'yes';
+$o = new WC_Order( 90, 50.0, 'USD' );
+$o->update_meta_data( '_agentmesh_payment_reference', 'cs_w2' );
+$o->update_meta_data( '_agentmesh_payment_gateway', 'stripe' );
+$GLOBALS['_orders'][90] = $o;
+$wbody = '{"type":"checkout.session.completed","data":{"object":{"id":"cs_w2","amount_total":5000,"currency":"usd"}}}';
+$wts   = (string) time();
+$wsig  = 't=' . $wts . ',v1=' . hash_hmac( 'sha256', $wts . '.' . $wbody, 'whsec_test' );
+$req = new WP_REST_Request();
+$req->set_header( 'stripe-signature', $wsig );
+$req->set_body( $wbody );
+$resp = $payments->handle_stripe_webhook( $req );
+eq( 200, $resp->get_status(), 'stripe webhook completed → 200' );
+ok( $o->is_paid(), 'stripe webhook marked order paid' );
+
+// unknown order → 200 ack
+reset_world();
+$GLOBALS['_agentmesh_options']['agentmesh_stripe_webhook_secret'] = 'whsec_test';
+$payments = new AgentMesh_Payments();
+$wbody = '{"type":"checkout.session.completed","data":{"object":{"id":"cs_nomatch","amount_total":100,"currency":"usd"}}}';
+$wts   = (string) time();
+$wsig  = 't=' . $wts . ',v1=' . hash_hmac( 'sha256', $wts . '.' . $wbody, 'whsec_test' );
+$req = new WP_REST_Request();
+$req->set_header( 'stripe-signature', $wsig );
+$req->set_body( $wbody );
+$resp = $payments->handle_stripe_webhook( $req );
+eq( 200, $resp->get_status(), 'stripe webhook unknown order → 200 ack' );
+
+echo "\n";
+
+// ─────────────────────────────────────────────────────────────────
 // Summary
 // ─────────────────────────────────────────────────────────────────
 echo "================================\n";

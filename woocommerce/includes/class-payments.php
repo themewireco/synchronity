@@ -60,6 +60,18 @@ interface AgentMesh_Payment_Provider {
 	 * @return array{methods: string[], currency: string, mobile_money_providers: string[]}
 	 */
 	public function get_methods( WC_Order $order ): array;
+
+	/** Stable gateway id: 'paystack' | 'stripe'. */
+	public function id(): string;
+
+	/** Human label for the gateway picker. */
+	public function label(): string;
+
+	/** True when API keys are present (gateway can transact). */
+	public function is_configured(): bool;
+
+	/** True when the merchant has enabled this gateway AND it is configured. */
+	public function is_enabled(): bool;
 }
 
 /**
@@ -155,6 +167,19 @@ class AgentMesh_Paystack_Provider implements AgentMesh_Payment_Provider {
 
 	public function get_secret_key(): string {
 		return $this->get_keys()['secret_key'];
+	}
+
+	public function id(): string { return 'paystack'; }
+
+	public function label(): string { return 'Paystack'; }
+
+	public function is_configured(): bool {
+		return '' !== $this->get_secret_key();
+	}
+
+	public function is_enabled(): bool {
+		// Paystack defaults enabled for backward compatibility with existing stores.
+		return $this->is_configured() && self::option_enabled( 'agentmesh_payment_enable_paystack' );
 	}
 
 	/**
@@ -583,16 +608,324 @@ class AgentMesh_Paystack_Provider implements AgentMesh_Payment_Provider {
 }
 
 /**
+ * Stripe implementation of {@see AgentMesh_Payment_Provider}.
+ *
+ * Card only, via Hosted Checkout Sessions (redirect) — the same UX as Paystack
+ * card: the buyer taps a link, pays on Stripe, returns. No mobile money / OTP.
+ *
+ * PCI: never collects/transmits/logs a card PAN/CVV/expiry; Stripe hosts the form.
+ * Amount + currency are ALWAYS derived from the WooCommerce order.
+ */
+class AgentMesh_Stripe_Provider implements AgentMesh_Payment_Provider {
+
+	const API_BASE = 'https://api.stripe.com';
+
+	public function id(): string { return 'stripe'; }
+	public function label(): string { return 'Stripe'; }
+
+	/**
+	 * Resolve Stripe keys. Prefers the official Stripe-for-WooCommerce options
+	 * (`woocommerce_stripe_settings`); falls back to dedicated `agentmesh_stripe_*`.
+	 *
+	 * @return array{secret_key:string, publishable_key:string, mode:string, webhook_secret:string}
+	 */
+	public function get_keys(): array {
+		$plugin = get_option( 'woocommerce_stripe_settings', [] );
+		if ( is_array( $plugin ) && ( ! empty( $plugin['test_secret_key'] ) || ! empty( $plugin['secret_key'] ) ) ) {
+			$testmode = isset( $plugin['testmode'] ) ? ( 'yes' === $plugin['testmode'] ) : true;
+			return [
+				'secret_key'      => (string) ( $testmode ? ( $plugin['test_secret_key'] ?? '' ) : ( $plugin['secret_key'] ?? '' ) ),
+				'publishable_key' => (string) ( $testmode ? ( $plugin['test_publishable_key'] ?? '' ) : ( $plugin['publishable_key'] ?? '' ) ),
+				'mode'            => $testmode ? 'test' : 'live',
+				'webhook_secret'  => (string) get_option( 'agentmesh_stripe_webhook_secret', '' ),
+			];
+		}
+
+		$mode     = (string) get_option( 'agentmesh_stripe_mode', 'test' );
+		$testmode = ( 'live' !== $mode );
+		return [
+			'secret_key'      => (string) get_option( $testmode ? 'agentmesh_stripe_test_secret_key' : 'agentmesh_stripe_live_secret_key', '' ),
+			'publishable_key' => (string) get_option( $testmode ? 'agentmesh_stripe_test_publishable_key' : 'agentmesh_stripe_live_publishable_key', '' ),
+			'mode'            => $testmode ? 'test' : 'live',
+			'webhook_secret'  => (string) get_option( 'agentmesh_stripe_webhook_secret', '' ),
+		];
+	}
+
+	private function get_secret_key(): string { return $this->get_keys()['secret_key']; }
+
+	public function is_configured(): bool { return '' !== $this->get_secret_key(); }
+
+	public function is_enabled(): bool {
+		// Stripe defaults DISABLED — opt-in via the settings toggle.
+		$toggle = get_option( 'agentmesh_payment_enable_stripe', 'no' );
+		$on     = ! in_array( strtolower( (string) $toggle ), [ 'no', '0', '', 'false' ], true );
+		return $this->is_configured() && $on;
+	}
+
+	public function get_methods( WC_Order $order ): array {
+		return [
+			'methods'                => [ 'card' ],
+			'currency'               => $order->get_currency(),
+			'mobile_money_providers' => [],
+		];
+	}
+
+	public function initiate( WC_Order $order, string $channel, array $args ): array {
+		if ( 'card' !== $channel ) {
+			return $this->fail_session( $order, '', $channel, 'Stripe supports card payments only.' );
+		}
+
+		$currency  = strtolower( $order->get_currency() );
+		$amount    = (int) round( ( (float) $order->get_total() ) * 100 ); // subunits, from the order
+
+		$body = [
+			'mode'                                  => 'payment',
+			'success_url'                           => $this->return_url() . '?gateway=stripe&session_id={CHECKOUT_SESSION_ID}',
+			'cancel_url'                            => $this->return_url() . '?gateway=stripe&cancel=1',
+			'client_reference_id'                   => (string) $order->get_id(),
+			'line_items[0][quantity]'               => 1,
+			'line_items[0][price_data][currency]'   => $currency,
+			'line_items[0][price_data][unit_amount]' => $amount,
+			'line_items[0][price_data][product_data][name]' => 'Order #' . $order->get_id(),
+		];
+		$email = $order->get_billing_email();
+		if ( '' !== (string) $email ) {
+			$body['customer_email'] = (string) $email;
+		}
+
+		$resp = $this->api_post( '/v1/checkout/sessions', $body );
+
+		if ( is_wp_error( $resp ) ) {
+			return $this->fail_session( $order, '', $channel, $resp->get_error_message() );
+		}
+
+		$session_id = (string) ( $resp['id'] ?? '' );
+		$url        = (string) ( $resp['url'] ?? '' );
+		if ( '' === $session_id || '' === $url ) {
+			return $this->fail_session( $order, $session_id, $channel, 'Could not initialise Stripe checkout.' );
+		}
+
+		$order->update_meta_data( '_agentmesh_payment_reference', $session_id );
+		$order->update_meta_data( '_agentmesh_payment_channel', $channel );
+		$order->update_meta_data( '_agentmesh_payment_gateway', 'stripe' );
+		$order->save();
+
+		return AgentMesh_Normaliser::payment_session_to_amps( $order, [
+			'reference'         => $session_id,
+			'channel'           => $channel,
+			'payment_status'    => 'awaiting_user',
+			'authorization_url' => $url,
+			'message'           => 'Tap the link to pay securely on Stripe.',
+		] );
+	}
+
+	public function submit_otp( WC_Order $order, string $reference, string $otp ): array {
+		return $this->fail_session( $order, $reference, 'card', 'Stripe payments do not use OTP.' );
+	}
+
+	public function verify( string $reference ): array {
+		$resp = $this->api_get( '/v1/checkout/sessions/' . rawurlencode( $reference ) );
+		if ( is_wp_error( $resp ) ) {
+			return [ 'status' => 'unknown', 'amount' => 0.0, 'currency' => '', 'raw' => [] ];
+		}
+
+		$pay_status = strtolower( (string) ( $resp['payment_status'] ?? '' ) );
+		$status_str = strtolower( (string) ( $resp['status'] ?? '' ) );
+		$amount     = isset( $resp['amount_total'] ) ? ( (float) $resp['amount_total'] ) / 100.0 : 0.0;
+		$currency   = strtoupper( (string) ( $resp['currency'] ?? '' ) );
+
+		if ( 'paid' === $pay_status || 'complete' === $status_str ) {
+			$status = 'success';
+		} elseif ( 'expired' === $status_str ) {
+			$status = 'failed';
+		} else {
+			$status = 'pending';
+		}
+
+		return [ 'status' => $status, 'amount' => $amount, 'currency' => $currency, 'raw' => $resp ];
+	}
+
+	public function parse_webhook( WP_REST_Request $request ): array {
+		$raw    = (string) $request->get_body();
+		$sig    = (string) $request->get_header( 'stripe-signature' );
+		$secret = $this->get_keys()['webhook_secret'];
+
+		$valid = false;
+		if ( '' !== $secret && '' !== $sig && '' !== $raw ) {
+			$t = '';
+			$v1 = '';
+			foreach ( explode( ',', $sig ) as $part ) {
+				$kv = explode( '=', trim( $part ), 2 );
+				if ( 2 !== count( $kv ) ) { continue; }
+				if ( 't' === $kv[0] ) { $t = $kv[1]; }
+				if ( 'v1' === $kv[0] ) { $v1 = $kv[1]; }
+			}
+			if ( '' !== $t && '' !== $v1 ) {
+				$computed = hash_hmac( 'sha256', $t . '.' . $raw, $secret );
+				$valid    = hash_equals( $computed, $v1 );
+			}
+		}
+
+		$payload   = json_decode( $raw, true );
+		$payload   = is_array( $payload ) ? $payload : [];
+		$event     = (string) ( $payload['type'] ?? '' );
+		$obj       = $payload['data']['object'] ?? [];
+		$reference = (string) ( $obj['id'] ?? '' ); // checkout.session id
+		$amount    = isset( $obj['amount_total'] ) ? ( (float) $obj['amount_total'] ) / 100.0 : 0.0;
+		$currency  = strtoupper( (string) ( $obj['currency'] ?? '' ) );
+
+		return [
+			'valid'     => $valid,
+			'event'     => $event,
+			'reference' => $reference,
+			'amount'    => $amount,
+			'currency'  => $currency,
+			'raw'       => $payload,
+		];
+	}
+
+	private function return_url(): string {
+		return rest_url( AGENTMESH_REST_NAMESPACE . '/connector/payment/return' );
+	}
+
+	private function fail_session( WC_Order $order, string $reference, string $channel, string $message ): array {
+		return AgentMesh_Normaliser::payment_session_to_amps( $order, [
+			'reference'      => $reference,
+			'channel'        => $channel,
+			'payment_status' => 'failed',
+			'message'        => $message,
+		] );
+	}
+
+	/** POST form-encoded to Stripe. Returns decoded body array or WP_Error. */
+	private function api_post( string $path, array $body ) {
+		$secret = $this->get_secret_key();
+		if ( '' === $secret ) {
+			return new WP_Error( 'stripe_not_configured', 'Stripe secret key is not configured.' );
+		}
+		$response = wp_remote_post( self::API_BASE . $path, [
+			'timeout' => 20,
+			'headers' => [
+				'Authorization' => 'Bearer ' . $secret,
+				'Content-Type'  => 'application/x-www-form-urlencoded',
+				'Accept'        => 'application/json',
+			],
+			'body'    => http_build_query( $body ),
+		] );
+		return $this->decode( $response );
+	}
+
+	/** GET from Stripe. Returns decoded body array or WP_Error. */
+	private function api_get( string $path ) {
+		$secret = $this->get_secret_key();
+		if ( '' === $secret ) {
+			return new WP_Error( 'stripe_not_configured', 'Stripe secret key is not configured.' );
+		}
+		$response = wp_remote_get( self::API_BASE . $path, [
+			'timeout' => 20,
+			'headers' => [
+				'Authorization' => 'Bearer ' . $secret,
+				'Accept'        => 'application/json',
+			],
+		] );
+		return $this->decode( $response );
+	}
+
+	private function decode( $response ) {
+		if ( is_wp_error( $response ) ) {
+			return new WP_Error( 'stripe_http_error', 'Could not reach Stripe: ' . $response->get_error_message() );
+		}
+		$decoded = json_decode( (string) wp_remote_retrieve_body( $response ), true );
+		if ( ! is_array( $decoded ) ) {
+			return new WP_Error( 'stripe_bad_response', 'Unexpected response from Stripe.' );
+		}
+		return $decoded;
+	}
+}
+
+/**
+ * Registry of buyer-payment gateways. Add a gateway by registering its provider
+ * here — no route changes needed.
+ */
+class AgentMesh_Payment_Gateways {
+
+	/** @var AgentMesh_Payment_Provider[] */
+	private array $providers;
+
+	public function __construct( ?array $providers = null ) {
+		$this->providers = $providers ?? [
+			new AgentMesh_Paystack_Provider(),
+			new AgentMesh_Stripe_Provider(),
+		];
+	}
+
+	/** @return AgentMesh_Payment_Provider[] configured + merchant-enabled providers. */
+	public function enabled(): array {
+		return array_values( array_filter( $this->providers, fn( $p ) => $p->is_enabled() ) );
+	}
+
+	public function get( string $id ): ?AgentMesh_Payment_Provider {
+		foreach ( $this->providers as $p ) {
+			if ( $p->id() === $id && $p->is_enabled() ) {
+				return $p;
+			}
+		}
+		return null;
+	}
+
+	/** First enabled provider — used when a request omits the gateway selector. */
+	public function default(): ?AgentMesh_Payment_Provider {
+		$enabled = $this->enabled();
+		return $enabled[0] ?? null;
+	}
+}
+
+/**
  * REST routes for inline payments + Paystack webhook + shared status-advance logic.
  */
 class AgentMesh_Payments {
 
 	private AgentMesh_Auth $auth;
-	private AgentMesh_Payment_Provider $provider;
+	private AgentMesh_Payment_Gateways $gateways;
 
-	public function __construct( ?AgentMesh_Payment_Provider $provider = null ) {
+	public function __construct( ?AgentMesh_Payment_Gateways $gateways = null ) {
 		$this->auth     = new AgentMesh_Auth();
-		$this->provider = $provider ?: new AgentMesh_Paystack_Provider();
+		$this->gateways = $gateways ?: new AgentMesh_Payment_Gateways();
+	}
+
+	/**
+	 * Resolve the provider for a request: the explicit `gateway` param if enabled,
+	 * else the order's stored gateway, else the registry default. Falls back to a
+	 * Paystack provider so pre-existing orders (no stored gateway) keep working.
+	 */
+	private function resolve_provider( WP_REST_Request $request, ?WC_Order $order = null ): AgentMesh_Payment_Provider {
+		$req_gateway = sanitize_text_field( (string) ( $request->get_param( 'gateway' ) ?: '' ) );
+		if ( '' !== $req_gateway ) {
+			$p = $this->gateways->get( $req_gateway );
+			if ( $p ) { return $p; }
+		}
+		if ( $order ) {
+			$stored = (string) $order->get_meta( '_agentmesh_payment_gateway' );
+			if ( '' !== $stored ) {
+				$p = $this->gateways->get( $stored );
+				if ( $p ) { return $p; }
+			}
+		}
+		return $this->gateways->default() ?: new AgentMesh_Paystack_Provider();
+	}
+
+	/**
+	 * Resolve the provider that OWNS an existing payment, from the order's stored
+	 * gateway only (never the request param — the gateway is committed at initiate).
+	 * Falls back to the registry default, then Paystack, so pre-existing orders work.
+	 */
+	private function provider_for_order( WC_Order $order ): AgentMesh_Payment_Provider {
+		$stored = (string) $order->get_meta( '_agentmesh_payment_gateway' );
+		if ( '' !== $stored ) {
+			$p = $this->gateways->get( $stored );
+			if ( $p ) { return $p; }
+		}
+		return $this->gateways->default() ?: new AgentMesh_Paystack_Provider();
 	}
 
 	public function register_routes(): void {
@@ -646,6 +979,16 @@ class AgentMesh_Payments {
 			]
 		);
 
+		register_rest_route(
+			AGENTMESH_REST_NAMESPACE,
+			'/webhooks/stripe',
+			[
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => [ $this, 'handle_stripe_webhook' ],
+				'permission_callback' => '__return_true', // authenticity verified inside via signature
+			]
+		);
+
 		// Public browser landing for card payments (Paystack callback_url, GET).
 		// Verifies the transaction with Paystack, advances the order, then renders
 		// a minimal "return to your chat" page. Authenticity comes from verifying
@@ -671,7 +1014,32 @@ class AgentMesh_Payments {
 			return AgentMesh_Auth::echo_request_id( $request, $err );
 		}
 
-		$response = new WP_REST_Response( $this->provider->get_methods( $order ), 200 );
+		$gateways    = [];
+		$all_methods = [];
+		$all_mm      = [];
+		$mm_labels   = [];
+		foreach ( $this->gateways->enabled() as $provider ) {
+			$m          = $provider->get_methods( $order );
+			$gateways[] = [
+				'id'                           => $provider->id(),
+				'label'                        => $provider->label(),
+				'channels'                     => $m['methods'] ?? [],
+				'mobile_money_providers'       => $m['mobile_money_providers'] ?? [],
+				'mobile_money_provider_labels' => $m['mobile_money_provider_labels'] ?? [],
+			];
+			$all_methods = array_merge( $all_methods, $m['methods'] ?? [] );
+			$all_mm      = array_merge( $all_mm, $m['mobile_money_providers'] ?? [] );
+			$mm_labels   = array_merge( $mm_labels, $m['mobile_money_provider_labels'] ?? [] );
+		}
+
+		$response = new WP_REST_Response( [
+			'gateways'                     => $gateways,
+			// Legacy flat fields (union) — retained for agents that ignore `gateways`.
+			'methods'                      => array_values( array_unique( $all_methods ) ),
+			'currency'                     => $order->get_currency(),
+			'mobile_money_providers'       => array_values( array_unique( $all_mm ) ),
+			'mobile_money_provider_labels' => $mm_labels,
+		], 200 );
 		return AgentMesh_Auth::echo_request_id( $request, $response );
 	}
 
@@ -711,14 +1079,15 @@ class AgentMesh_Payments {
 			return AgentMesh_Auth::echo_request_id( $request, $r );
 		}
 
-		$phone    = AgentMesh_Paystack_Provider::normalize_ghana_phone(
+		$phone         = AgentMesh_Paystack_Provider::normalize_ghana_phone(
 			sanitize_text_field( (string) ( $request->get_param( 'phone' ) ?: '' ) )
 		);
-		$provider = AgentMesh_Paystack_Provider::normalize_mobile_money_provider(
+		$provider_code = AgentMesh_Paystack_Provider::normalize_mobile_money_provider(
 			sanitize_text_field( (string) ( $request->get_param( 'provider' ) ?: '' ) )
 		);
 
-		$session = $this->provider->initiate( $order, $channel, [ 'phone' => $phone, 'provider' => $provider ] );
+		$provider = $this->resolve_provider( $request, $order );
+		$session  = $provider->initiate( $order, $channel, [ 'phone' => $phone, 'provider' => $provider_code ] );
 
 		$response = new WP_REST_Response( $session, 200 );
 		return AgentMesh_Auth::echo_request_id( $request, $response );
@@ -749,7 +1118,8 @@ class AgentMesh_Payments {
 			return AgentMesh_Auth::echo_request_id( $request, $r );
 		}
 
-		$session = $this->provider->submit_otp( $order, $reference, $otp );
+		$provider = $this->provider_for_order( $order );
+		$session  = $provider->submit_otp( $order, $reference, $otp );
 
 		$response = new WP_REST_Response( $session, 200 );
 		return AgentMesh_Auth::echo_request_id( $request, $response );
@@ -802,8 +1172,9 @@ class AgentMesh_Payments {
 			return AgentMesh_Auth::echo_request_id( $request, $response );
 		}
 
-		// Verify-on-poll: ask Paystack for the canonical status.
-		$verify = $this->provider->verify( $reference );
+		// Verify-on-poll: ask the appropriate gateway for the canonical status.
+		$provider = $this->provider_for_order( $order );
+		$verify   = $provider->verify( $reference );
 
 		if ( 'success' === $verify['status'] ) {
 			// Advance the order idempotently (webhook may not have landed).
@@ -840,7 +1211,8 @@ class AgentMesh_Payments {
 	// ─────────────────────────────────────────────────────────────────
 
 	public function handle_paystack_webhook( WP_REST_Request $request ): WP_REST_Response {
-		$parsed = $this->provider->parse_webhook( $request );
+		$provider = $this->gateways->get( 'paystack' ) ?: new AgentMesh_Paystack_Provider();
+		$parsed   = $provider->parse_webhook( $request );
 
 		if ( empty( $parsed['valid'] ) ) {
 			$r = new WP_REST_Response(
@@ -878,6 +1250,47 @@ class AgentMesh_Payments {
 	}
 
 	// ─────────────────────────────────────────────────────────────────
+	// POST /webhooks/stripe
+	// ─────────────────────────────────────────────────────────────────
+
+	public function handle_stripe_webhook( WP_REST_Request $request ): WP_REST_Response {
+		$provider = $this->gateways->get( 'stripe' ) ?: new AgentMesh_Stripe_Provider();
+		$parsed   = $provider->parse_webhook( $request );
+
+		if ( empty( $parsed['valid'] ) ) {
+			$r = new WP_REST_Response( AgentMesh_Auth::error_response( 'FORBIDDEN', 'Invalid Stripe signature.' ), 401 );
+			return AgentMesh_Auth::echo_request_id( $request, $r );
+		}
+
+		$reference = (string) $parsed['reference'];
+		if ( '' === $reference ) {
+			$r = new WP_REST_Response( AgentMesh_Auth::error_response( 'INVALID_REQUEST', 'Missing reference in webhook.' ), 400 );
+			return AgentMesh_Auth::echo_request_id( $request, $r );
+		}
+
+		$order = $this->find_order_by_reference( $reference );
+		if ( ! $order ) {
+			$response = new WP_REST_Response( [ 'received' => true ], 200 );
+			return AgentMesh_Auth::echo_request_id( $request, $response );
+		}
+
+		if ( '' === (string) $order->get_meta( '_agentmesh_payment_gateway' ) ) {
+			$order->update_meta_data( '_agentmesh_payment_gateway', 'stripe' );
+			$order->save();
+		}
+
+		$event = (string) $parsed['event'];
+		if ( 'checkout.session.completed' === $event ) {
+			$this->advance_order_paid( $order, $reference, (float) $parsed['amount'], (string) $parsed['currency'] );
+		} elseif ( in_array( $event, [ 'checkout.session.expired', 'payment_intent.payment_failed' ], true ) ) {
+			$this->advance_order_failed( $order, $reference );
+		}
+
+		$response = new WP_REST_Response( [ 'received' => true ], 200 );
+		return AgentMesh_Auth::echo_request_id( $request, $response );
+	}
+
+	// ─────────────────────────────────────────────────────────────────
 	// GET /connector/payment/return  (card browser landing)
 	// ─────────────────────────────────────────────────────────────────
 
@@ -887,8 +1300,10 @@ class AgentMesh_Payments {
 	 * minimal HTML page. Outputs HTML directly (not REST JSON) and exits.
 	 */
 	public function handle_return( WP_REST_Request $request ): void {
+		// Paystack returns ?reference=…&trxref=…; Stripe returns ?session_id=… (the
+		// Checkout Session id, which is the stored payment reference).
 		$reference = sanitize_text_field(
-			(string) ( $request->get_param( 'reference' ) ?: $request->get_param( 'trxref' ) ?: '' )
+			(string) ( $request->get_param( 'reference' ) ?: $request->get_param( 'trxref' ) ?: $request->get_param( 'session_id' ) ?: '' )
 		);
 
 		$result = $this->resolve_return( $reference );
@@ -932,7 +1347,8 @@ class AgentMesh_Payments {
 			return 'failed';
 		}
 
-		$verify = $this->provider->verify( $reference );
+		$provider = $this->provider_for_order( $order );
+		$verify   = $provider->verify( $reference );
 		if ( 'success' === $verify['status'] ) {
 			$this->advance_order_paid( $order, $reference, (float) $verify['amount'], (string) $verify['currency'] );
 			return 'paid';
@@ -991,7 +1407,10 @@ HTML;
 			return;
 		}
 
-		$order->update_meta_data( '_agentmesh_payment_gateway', 'paystack' );
+		if ( '' === (string) $order->get_meta( '_agentmesh_payment_gateway' ) ) {
+			$order->update_meta_data( '_agentmesh_payment_gateway', 'paystack' );
+		}
+		$gateway_label = ucfirst( (string) $order->get_meta( '_agentmesh_payment_gateway' ) ?: 'paystack' );
 		$order->update_meta_data( '_agentmesh_transaction_id', $reference );
 		$order->update_meta_data( '_agentmesh_payment_completed_at', current_time( 'c' ) );
 		$order->delete_meta_data( '_agentmesh_payment_url' );
@@ -1004,7 +1423,8 @@ HTML;
 			$order->update_meta_data( '_agentmesh_payment_received', $amount );
 			$order->add_order_note(
 				sprintf(
-					'Paystack payment amount mismatch. Expected: %s %s, Received: %s %s. Flagged for review.',
+					'%s payment amount mismatch. Expected: %s %s, Received: %s %s. Flagged for review.',
+					$gateway_label,
 					number_format( $order_total, 2 ),
 					$order->get_currency(),
 					number_format( $amount, 2 ),
@@ -1017,7 +1437,7 @@ HTML;
 
 		$order->payment_complete( $reference );
 		$order->add_order_note(
-			sprintf( 'Inline payment completed via Paystack. Reference: %s', esc_html( $reference ) ),
+			sprintf( 'Inline payment completed via %s. Reference: %s', $gateway_label, esc_html( $reference ) ),
 			false,
 			true
 		);
@@ -1033,11 +1453,12 @@ HTML;
 		if ( in_array( $order->get_status(), [ 'failed', 'processing', 'completed' ], true ) ) {
 			return;
 		}
+		$gateway_label = ucfirst( (string) $order->get_meta( '_agentmesh_payment_gateway' ) ?: 'paystack' );
 		$order->update_meta_data( '_agentmesh_payment_failed_at', current_time( 'c' ) );
 		$order->update_meta_data( '_agentmesh_transaction_id', $reference );
 		$order->set_status( 'failed' );
 		$order->add_order_note(
-			sprintf( 'Inline payment failed via Paystack. Reference: %s', esc_html( $reference ) ),
+			sprintf( 'Inline payment failed via %s. Reference: %s', $gateway_label, esc_html( $reference ) ),
 			false,
 			true
 		);
@@ -1060,12 +1481,13 @@ HTML;
 		$site_id       = (string) get_option( 'agentmesh_site_id', '' );
 		$connector_key = (string) get_option( 'agentmesh_connector_key', '' );
 		$order_id      = $order->get_id();
+		$gateway       = (string) $order->get_meta( '_agentmesh_payment_gateway' ) ?: 'paystack';
 
 		$payload = [
 			'order_id'       => $order_id,
 			'event'          => $event,
 			'transaction_id' => $reference,
-			'gateway'        => 'paystack',
+			'gateway'        => $gateway,
 			'amount'         => (float) $order->get_total(),
 			'currency'       => $order->get_currency(),
 			'agent_name'     => $order->get_meta( '_agentmesh_agent_name' ) ?: null,

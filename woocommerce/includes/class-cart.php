@@ -53,6 +53,13 @@ class AgentMesh_Cart {
 			'permission_callback' => [ $this->auth, 'verify_connector_key' ],
 		] );
 
+		// PUT/PATCH — set a line's absolute quantity (the gateway's set_cart_quantity).
+		register_rest_route( $ns, '/connector/cart/(?P<cart_id>[^/]+)/items/(?P<item_id>[^/]+)', [
+			'methods'             => WP_REST_Server::EDITABLE,
+			'callback'            => [ $this, 'set_item_quantity' ],
+			'permission_callback' => [ $this->auth, 'verify_connector_key' ],
+		] );
+
 		register_rest_route( $ns, '/connector/cart/(?P<cart_id>[^/]+)/coupon', [
 			'methods'             => WP_REST_Server::CREATABLE,
 			'callback'            => [ $this, 'apply_coupon' ],
@@ -171,6 +178,15 @@ class AgentMesh_Cart {
 		}
 		$line_total = $unit_price * $quantity;
 
+		// Line thumbnail: prefer the variant's own image, fall back to the base product.
+		// The gateway renders this in the cart card (and inlines it as a data: URI for
+		// hosts whose sandbox blocks remote images, e.g. Claude).
+		$image_id = $product->get_image_id();
+		if ( ! $image_id && $variant_id && $base_product ) {
+			$image_id = $base_product->get_image_id();
+		}
+		$image_url = $image_id ? ( wp_get_attachment_url( $image_id ) ?: null ) : null;
+
 		$item = [
 			'item_id'    => 'item_' . $this->generate_short_id(),
 			'product_id' => (string) $product_id,
@@ -178,6 +194,7 @@ class AgentMesh_Cart {
 			'quantity'   => $quantity,
 			'unit_price' => [ 'amount' => number_format( $unit_price, 2, '.', '' ), 'currency' => $currency ],
 			'line_total' => [ 'amount' => number_format( $line_total, 2, '.', '' ), 'currency' => $currency ],
+			'image_url'  => $image_url,
 		];
 		if ( $variant_id ) {
 			$item['variant_id'] = (string) $variant_id;
@@ -234,6 +251,64 @@ class AgentMesh_Cart {
 
 		if ( ! $found ) {
 			return $this->not_found_response( $request, 'Cart item not found.' );
+		}
+
+		$cart_data = $this->recalculate( $cart_data );
+		$this->save_cart( $cart_id, $cart_data );
+
+		$response = new WP_REST_Response( $cart_data, 200 );
+		return AgentMesh_Auth::echo_request_id( $request, $response );
+	}
+
+	// ─────────────────────────────────────────────────────────────────
+	// PUT/PATCH /connector/cart/{id}/items/{item_id} — set absolute quantity
+	// ─────────────────────────────────────────────────────────────────
+
+	public function set_item_quantity( WP_REST_Request $request ): WP_REST_Response {
+		$cart_id  = sanitize_text_field( $request->get_param( 'cart_id' ) );
+		$item_id  = sanitize_text_field( $request->get_param( 'item_id' ) );
+		$quantity = (int) $request->get_param( 'quantity' );
+
+		if ( $quantity < 0 ) {
+			$r = new WP_REST_Response( AgentMesh_Auth::error_response( 'VALIDATION_ERROR', 'quantity must be a non-negative integer.' ), 400 );
+			return AgentMesh_Auth::echo_request_id( $request, $r );
+		}
+
+		[ $cart_data, $err ] = $this->resolve_cart( $cart_id );
+		if ( $err ) return AgentMesh_Auth::echo_request_id( $request, $err );
+
+		// quantity 0 removes the line (mirrors the gateway's delete-on-zero contract).
+		if ( 0 === $quantity ) {
+			$found = false;
+			$cart_data['items'] = array_values( array_filter(
+				$cart_data['items'],
+				function ( $item ) use ( $item_id, &$found ) {
+					if ( $item['item_id'] === $item_id ) { $found = true; return false; }
+					return true;
+				}
+			) );
+			if ( ! $found ) {
+				return $this->not_found_response( $request, 'Cart item not found.' );
+			}
+		} else {
+			$found = false;
+			foreach ( $cart_data['items'] as &$item ) {
+				if ( $item['item_id'] === $item_id ) {
+					$found        = true;
+					$currency     = $item['unit_price']['currency'];
+					$unit_price   = (float) $item['unit_price']['amount'];
+					$item['quantity']   = $quantity;
+					$item['line_total'] = [
+						'amount'   => number_format( $unit_price * $quantity, 2, '.', '' ),
+						'currency' => $currency,
+					];
+					break;
+				}
+			}
+			unset( $item );
+			if ( ! $found ) {
+				return $this->not_found_response( $request, 'Cart item not found.' );
+			}
 		}
 
 		$cart_data = $this->recalculate( $cart_data );

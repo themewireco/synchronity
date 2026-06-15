@@ -49,6 +49,22 @@ describe('searchProducts returns an MCP Apps product list', () => {
     expect(text).toContain('![Vintage Tee](https://img.test/tee.jpg)');
     expect(text).toContain('`p1`');
   });
+
+  it('browses (no query) — does NOT throw and omits q to the SDK', async () => {
+    const search = vi.fn(async () => ({ products: [product] }));
+    const browseClient = { products: { search } } as any;
+    const out: any = await searchProducts(browseClient, { site_id: 's1' }, {} as any);
+    expect(out.structuredContent).toMatchObject({ kind: 'productList', siteId: 's1' });
+    // Browse must reach the catalog with no `q` (an empty/whitespace query counts as browse).
+    expect(search).toHaveBeenCalledWith('s1', expect.objectContaining({ q: undefined }));
+  });
+
+  it('treats an empty/whitespace query as a browse (no throw)', async () => {
+    const search = vi.fn(async () => ({ products: [product] }));
+    const browseClient = { products: { search } } as any;
+    await searchProducts(browseClient, { site_id: 's1', query: '   ' }, {} as any);
+    expect(search).toHaveBeenCalledWith('s1', expect.objectContaining({ q: undefined }));
+  });
 });
 
 describe('request_delegation returns a Markdown delegation card', () => {

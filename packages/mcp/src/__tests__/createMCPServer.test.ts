@@ -6,6 +6,7 @@ const EXPECTED_TOOLS = [
   'search_products',
   'get_product',
   'get_product_reviews',
+  'request_back_in_stock',
   'compare_products',
   'create_cart',
   'add_to_cart',
