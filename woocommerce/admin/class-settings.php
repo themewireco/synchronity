@@ -198,6 +198,44 @@ class AgentMesh_Settings {
 				'id'   => 'agentmesh_payments_section',
 			],
 
+			[
+				'title' => __( 'Inline Payments (Stripe)', 'agentmesh-woocommerce' ),
+				'type'  => 'title',
+				'desc'  => __( 'Let AI agents pay by card via a Stripe-hosted secure page. Stripe keys are read automatically from your Stripe for WooCommerce plugin — nothing to enter here.', 'agentmesh-woocommerce' ),
+				'id'    => 'agentmesh_stripe_section',
+			],
+
+			[
+				'title'   => __( 'Enable Stripe', 'agentmesh-woocommerce' ),
+				'type'    => 'checkbox',
+				'desc'    => __( 'Offer card payments via a Stripe-hosted secure page (no card details touch the chat).', 'agentmesh-woocommerce' ),
+				'id'      => 'agentmesh_payment_enable_stripe',
+				'default' => 'no',
+			],
+
+			[
+				'title'    => __( 'Stripe Webhook URL', 'agentmesh-woocommerce' ),
+				'type'     => 'text',
+				'desc'     => __( 'Add this URL as a Stripe webhook endpoint (events: checkout.session.completed, checkout.session.expired), then paste its signing secret below.', 'agentmesh-woocommerce' ),
+				'id'       => 'agentmesh_stripe_webhook_url_display',
+				'value'    => $this->get_stripe_webhook_url(),
+				'custom_attributes' => [ 'readonly' => 'readonly' ],
+				'css'      => 'min-width:450px;background:#f6f7f7;',
+			],
+
+			[
+				'title'   => __( 'Stripe Webhook Signing Secret', 'agentmesh-woocommerce' ),
+				'type'    => 'password',
+				'desc'    => __( 'Optional. Stripe webhook signing secret (whsec_…). Leave blank to rely on payment-status polling; provide it for faster webhook-driven confirmation.', 'agentmesh-woocommerce' ),
+				'id'      => 'agentmesh_stripe_webhook_secret',
+				'default' => '',
+			],
+
+			[
+				'type' => 'sectionend',
+				'id'   => 'agentmesh_stripe_section',
+			],
+
 			// ── Product Add-ons (ACF) ───────────────────────────────────
 			[
 				'title' => __( 'Product Add-ons (ACF)', 'agentmesh-woocommerce' ),
@@ -413,6 +451,17 @@ class AgentMesh_Settings {
 		$base = function_exists( 'get_rest_url' )
 			? get_rest_url( null, AGENTMESH_REST_NAMESPACE . '/webhooks/paystack' )
 			: trailingslashit( get_site_url() ) . 'wp-json/' . AGENTMESH_REST_NAMESPACE . '/webhooks/paystack';
+		return $base;
+	}
+
+	/**
+	 * The connector-owned Stripe webhook URL the merchant registers in their
+	 * Stripe dashboard (events: checkout.session.completed, checkout.session.expired).
+	 */
+	private function get_stripe_webhook_url(): string {
+		$base = function_exists( 'get_rest_url' )
+			? get_rest_url( null, AGENTMESH_REST_NAMESPACE . '/webhooks/stripe' )
+			: trailingslashit( get_site_url() ) . 'wp-json/' . AGENTMESH_REST_NAMESPACE . '/webhooks/stripe';
 		return $base;
 	}
 

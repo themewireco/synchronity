@@ -99,6 +99,23 @@ const TOOL_DEFINITIONS: Tool[] = [
     },
   },
   {
+    name: 'request_back_in_stock',
+    annotations: { title: 'Notify me when back in stock', readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+    description:
+      'Subscribe the buyer to a back-in-stock alert for an out-of-stock product. Use when the buyer asks to be notified/told/pinged when an item restocks ("notify me when X is back", "let me know when it\'s in stock"). Collect the buyer\'s email so the alert can reach them (without it only the demand is recorded for the merchant). The buyer is emailed when the product is next seen in stock. Returns whether an email alert was armed.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'string', description: 'Registered site ID' },
+        product_id: { type: 'string', description: 'Product ID to watch' },
+        variant_id: { type: 'string', description: 'Specific variant to watch (optional)' },
+        email: { type: 'string', description: "Buyer's email for the restock alert (recommended — without it no alert is sent)" },
+        product_title: { type: 'string', description: 'Product name, for a clearer alert + merchant view (optional)' },
+      },
+      required: ['site_id', 'product_id'],
+    },
+  },
+  {
     name: 'compare_products',
     annotations: { title: 'Compare products across stores', readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     description:
@@ -153,7 +170,7 @@ const TOOL_DEFINITIONS: Tool[] = [
   },
   {
     name: 'remove_from_cart',
-    annotations: { title: 'Remove item from cart', readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+    annotations: { title: 'Remove item from cart', readOnlyHint: false, destructiveHint: true, openWorldHint: true },
     _meta: { ui: { resourceUri: 'ui://synchronity/cart' } },
     description: 'Remove a line item from the cart. Requires the item_id from the cart contents.',
     inputSchema: {
@@ -168,7 +185,7 @@ const TOOL_DEFINITIONS: Tool[] = [
   },
   {
     name: 'set_cart_quantity',
-    annotations: { title: 'Set item quantity', readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+    annotations: { title: 'Set item quantity', readOnlyHint: false, destructiveHint: true, openWorldHint: true },
     _meta: { ui: { resourceUri: 'ui://synchronity/cart' } },
     description: "Set a cart line's quantity (the server cart is the checkout source of truth, so this updates it live). Requires the item_id from the cart contents and the new absolute quantity. A quantity of 0 removes the line. Returns the updated cart card.",
     inputSchema: {
@@ -376,7 +393,7 @@ const TOOL_DEFINITIONS: Tool[] = [
     name: 'get_payment_methods',
     annotations: { title: 'Get payment methods', readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     description:
-      'STEP 1 of the in-chat payment flow. Returns the payment channels available for an order (e.g. "mobile_money", "card"). Call this first, after an order exists, to find out how the buyer can pay. Then call initiate_payment with the chosen channel. site_id falls back to DEFAULT_SITE_ID if omitted.',
+      'STEP 1 of the in-chat payment flow. Returns the payment channels available for an order (e.g. "mobile_money", "card") plus a `gateways` array of the enabled payment gateways (each with id, label, and its channels). When more than one gateway is listed, ask the buyer which they want to use and pass it as `gateway` to initiate_payment. Call this first, after an order exists. Then call initiate_payment with the chosen channel (and gateway if more than one). site_id falls back to DEFAULT_SITE_ID if omitted.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -407,6 +424,12 @@ const TOOL_DEFINITIONS: Tool[] = [
           enum: ['mtn', 'vod', 'tgo', 'telecel', 'vodafone', 'tigo', 'airteltigo'],
           description:
             'Mobile-money provider (required for channel "mobile_money"). Codes: mtn, vod (Vodafone/Telecel), tgo (AirtelTigo).',
+        },
+        gateway: {
+          type: 'string',
+          enum: ['paystack', 'stripe'],
+          description:
+            'Payment gateway to use when the store has more than one enabled (see get_payment_methods.gateways[].id). Optional — defaults to the store\'s first enabled gateway.',
         },
         buyer_delegation_token: {
           type: 'string',
@@ -541,8 +564,8 @@ export function createMCPServer(config: {
 
   const SERVER_INSTRUCTIONS = [
     'Synchronity lets you shop across the user\'s connected e-commerce stores and complete real purchases on their behalf.',
-    'WHEN TO USE: invoke these tools whenever the user expresses any shopping, product, or buying intent — even when they do NOT name "Synchronity" and even when the request is indirect. Treat all of these as triggers: naming or describing a product or category they want ("I need coffee beans", "some red wine for tonight", "a birthday gift under 200"); asking what a store has or sells ("what does Pronto Partners carry", "show me the catalog"); asking about price/availability ("how much is the Burgo Viejo", "is it in stock", "do they ship to Ghana"); comparison ("which store is cheapest for X"); or any add/buy/order phrasing ("add 2 to my cart", "get me 5 of …", "order …", "buy …", "check out", "I\'ll take it"). When intent is implicit, act on it — do not ask "should I search Synchronity?" first. You do not need permission to call the discovery tools (list_sites, search_products, get_product, compare_products); just use them.',
-    'GETTING STARTED: call list_sites first to find the store + its site_id (every other tool needs site_id).',
+    'WHEN TO USE: invoke these tools whenever the user expresses any shopping, product, or buying intent — even when they do NOT name "Synchronity" and even when the request is indirect. Treat all of these as triggers: naming any store, shop, brand, bakery, restaurant or business and asking to see it ("show me Sorella Bakery\'s catalogue", "what does Pronto Partners carry", "browse <store>", "<store>\'s menu/products/shop"); naming or describing a product or category they want ("I need coffee beans", "some red wine for tonight", "a birthday gift under 200"); asking what a store has or sells ("show me the catalog", "what do they sell"); asking about price/availability ("how much is the Burgo Viejo", "is it in stock", "do they ship to Ghana"); comparison ("which store is cheapest for X"); or any add/buy/order phrasing ("add 2 to my cart", "get me 5 of …", "order …", "buy …", "check out", "I\'ll take it"). When intent is implicit, act on it — do not ask "should I search Synchronity?" first. You do not need permission to call the discovery tools (list_sites, search_products, get_product, compare_products); just use them.',
+    'GETTING STARTED: call list_sites FIRST — before anything else — to find the store + its site_id (every other tool needs site_id). CRITICAL: when the user names a specific store/brand/shop, do NOT web-search or fetch the store\'s website to find its catalogue, menu, or products before calling list_sites. A store you do not recognise may still be connected to Synchronity, and list_sites is the only way to know. Match the named store against list_sites (fuzzy/partial name is fine); if it is there, use the Synchronity tools and never the open web. Only if list_sites clearly does not contain that store may you consider another approach.',
     'BROWSING vs SEARCHING: to show what a store carries (open-ended "what do they have", "show me the catalog"), call search_products with NO query — that returns the store\'s catalog. Only pass a query for a specific search (a product name/keyword). Do not invent a query for an open-ended browse request.',
     'CART: build the cart with add_to_cart; change a line\'s amount with set_cart_quantity (pass the new absolute quantity; 0 removes the line) and remove a line with remove_from_cart. Read totals with get_cart — never compute prices yourself; the server cart is the source of truth for checkout.',
     'RESUMING: if a shopping conversation continues, or after any cart error, call get_active_cart(site_id) before assuming a new cart — it restores the buyer\'s in-progress items so they don\'t restart.',

@@ -52,12 +52,16 @@ export type ToolImplementation = (
 export const searchProducts: ToolImplementation = async (client, args) => {
   const { site_id, query, category, min_price, max_price, in_stock, page = 1, per_page = 20 } = args;
 
-  if (!site_id || !query) {
-    throw new Error('site_id and query are required');
+  // query is OPTIONAL: omit it to browse the store's full catalog. Only site_id
+  // is required. Passing an empty/whitespace query is treated as a browse.
+  if (!site_id) {
+    throw new Error('site_id is required');
   }
 
+  const trimmedQuery = typeof query === 'string' ? query.trim() : '';
+
   const results = await client.products.search(site_id as string, {
-    q: query as string,
+    q: trimmedQuery ? trimmedQuery : undefined,
     category: category as string | undefined,
     min_price: min_price as number | undefined,
     max_price: max_price as number | undefined,
@@ -164,7 +168,7 @@ export const addToCart: ToolImplementation = async (client, args) => {
 
   let updatedCart;
   try {
-    updatedCart = await client.cart.addItem(site_id as string, cart_id, item);
+    updatedCart = await client.cart.addItem(site_id as string, cart_id as string, item);
   } catch (err) {
     // The cart was consumed/expired (e.g. after a checkout or failed payment in the
     // same session). Try to resume from buyer_carts first; fall back to a fresh cart.
@@ -176,14 +180,14 @@ export const addToCart: ToolImplementation = async (client, args) => {
         const created = await client.cart.create(site_id as string);
         cart_id = created.cart_id;
       }
-      updatedCart = await client.cart.addItem(site_id as string, cart_id, item);
+      updatedCart = await client.cart.addItem(site_id as string, cart_id as string, item);
     } else {
       throw err;
     }
   }
 
   const cartModel = buildCartCard(updatedCart as any, site_id as string);
-  return cardResult(cartModel);
+  return cardResult(await inlineCardImages(cartModel));
 };
 
 /**
@@ -199,7 +203,7 @@ export const removeFromCart: ToolImplementation = async (client, args) => {
   const updatedCart = await client.cart.removeItem(site_id as string, cart_id as string, item_id as string);
   const c = updatedCart as any;
   const cartModel = buildCartCard(c, site_id as string);
-  return cardResult(cartModel);
+  return cardResult(await inlineCardImages(cartModel));
 };
 
 /**
@@ -223,7 +227,7 @@ export const setCartQuantity: ToolImplementation = async (client, args) => {
     qty,
   );
   const cartModel = buildCartCard(updatedCart as any, site_id as string);
-  return cardResult(cartModel);
+  return cardResult(await inlineCardImages(cartModel));
 };
 
 /**
@@ -254,7 +258,7 @@ export const getCart: ToolImplementation = async (client, args) => {
   const cart = await client.cart.get(site_id, cart_id);
   const c = cart as any;
   const cartModel = buildCartCard(c, site_id);
-  return cardResult(cartModel);
+  return cardResult(await inlineCardImages(cartModel));
 };
 
 /**
@@ -270,7 +274,7 @@ export const getActiveCart: ToolImplementation = async (client, args) => {
     return JSON.stringify({ cart: null, message: 'No active cart found for this site.' });
   }
   const cartModel = buildCartCard(c, site_id);
-  return cardResult(cartModel);
+  return cardResult(await inlineCardImages(cartModel));
 };
 
 export const executeCheckout: ToolImplementation = async (client, args) => {
@@ -530,6 +534,25 @@ export const getProductReviews: ToolImplementation = async (client, args) => {
   return JSON.stringify(reviews, null, 2);
 };
 
+/**
+ * Tool: Request a back-in-stock alert for an out-of-stock product.
+ */
+export const requestBackInStock: ToolImplementation = async (client, args) => {
+  const { site_id, product_id, variant_id, email, product_title } = args;
+
+  if (!site_id || !product_id) {
+    throw new Error('site_id and product_id are required');
+  }
+
+  const result = await client.products.notifyRestock(site_id as string, product_id as string, {
+    ...(variant_id ? { variant_id: variant_id as string } : {}),
+    ...(email ? { email: email as string } : {}),
+    ...(product_title ? { product_title: product_title as string } : {}),
+  });
+
+  return JSON.stringify(result);
+};
+
 /** Tool: Set the cart's shipping destination and return available rates */
 export const setShippingAddress: ToolImplementation = async (client, args) => {
   const { site_id, cart_id, country_code, postal_code, state, city } = args;
@@ -542,7 +565,7 @@ export const setShippingAddress: ToolImplementation = async (client, args) => {
     state: state as string | undefined,
     city: city as string | undefined,
   });
-  const checkoutModel = buildCheckoutCard(cart as any, site_id as string);
+  const checkoutModel = await inlineCardImages(buildCheckoutCard(cart as any, site_id as string));
   return {
     content: [{ type: 'text', text: markdownFallback(checkoutModel) }],
     structuredContent: checkoutModel,
@@ -584,7 +607,7 @@ export const getPaymentMethods: ToolImplementation = async (client, args) => {
 
 export const initiatePayment: ToolImplementation = async (client, args) => {
   const siteId = resolveSiteId(args);
-  const { order_id, channel, phone, provider, buyer_delegation_token } = args;
+  const { order_id, channel, phone, provider, gateway, buyer_delegation_token } = args;
   if (!order_id) throw new Error('order_id is required');
   if (channel !== 'mobile_money' && channel !== 'card') {
     throw new Error('channel must be "mobile_money" or "card"');
@@ -607,6 +630,7 @@ export const initiatePayment: ToolImplementation = async (client, args) => {
     channel: channel as 'mobile_money' | 'card',
     phone: channel === 'mobile_money' ? normalizeGhanaPhone(phone as string) : undefined,
     provider: normalizedProvider,
+    ...(gateway ? { gateway: gateway as 'paystack' | 'stripe' } : {}),
     buyer_delegation_token: buyer_delegation_token as string | undefined,
   });
   return {
@@ -650,7 +674,7 @@ export const selectShippingOption: ToolImplementation = async (client, args) => 
     throw new Error('site_id, cart_id, and option_id are required');
   }
   const cart = await client.cart.selectShippingOption(site_id as string, cart_id as string, option_id as string);
-  const checkoutModel = buildCheckoutCard(cart as any, site_id as string);
+  const checkoutModel = await inlineCardImages(buildCheckoutCard(cart as any, site_id as string));
   return {
     content: [{ type: 'text', text: markdownFallback(checkoutModel) }],
     structuredContent: checkoutModel,
@@ -678,6 +702,7 @@ export const TOOL_IMPLEMENTATIONS: Record<string, ToolImplementation> = {
   search_products: searchProducts,
   get_product: getProduct,
   get_product_reviews: getProductReviews,
+  request_back_in_stock: requestBackInStock,
   compare_products: compareProducts,
   create_cart: createCart,
   add_to_cart: addToCart,

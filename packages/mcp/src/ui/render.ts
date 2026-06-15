@@ -504,6 +504,16 @@ function setCartCount(siteId: string, items?: Array<{ qty?: number }>): void {
 }
 
 /**
+ * Clear a site's cached cart state after a completed checkout. The server cart is
+ * consumed once paid, so the bag badge must drop to 0 and the next add must start a
+ * fresh cart — otherwise a refreshed chat keeps showing the already-paid item count.
+ */
+function clearCartState(siteId: string): void {
+  sessionStorage.removeItem(`cart_count_${siteId}`);
+  sessionStorage.removeItem(`active_cart_${siteId}`);
+}
+
+/**
  * The active cart id for a site, the single source of truth shared across every
  * Add-to-cart button and the bag in this View. Persisted in sessionStorage so it
  * survives the per-tool-result re-renders the host issues — one cart per browse
@@ -2178,6 +2188,10 @@ function renderSuccessStep(
     clearInterval((root as any)._paymentPollInterval);
     (root as any)._paymentPollInterval = null;
   }
+
+  // Order is paid and placed — drop this site's cached cart so the bag badge resets
+  // to 0 (incl. after a chat refresh) and the next add starts a fresh cart.
+  clearCartState(model.siteId);
 
   root.replaceChildren();
   const card = el('div', 'syn-card');
