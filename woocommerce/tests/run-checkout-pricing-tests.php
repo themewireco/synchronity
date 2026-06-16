@@ -11,6 +11,10 @@ define( 'ABSPATH', __DIR__ . '/' );
 define( 'AGENTMESH_PLUGIN_DIR', dirname( __DIR__ ) . '/' );
 function wp_json_encode( $d ) { return json_encode( $d ); }
 
+// Settable option store so tests can toggle the add-on pricing mode.
+$GLOBALS['_options'] = [];
+function get_option( $key, $default = false ) { return $GLOBALS['_options'][ $key ] ?? $default; }
+
 // --- Faithful WooCommerce stubs ---------------------------------------------
 
 class Stub_Item {
@@ -84,8 +88,20 @@ $m = new ReflectionMethod( 'AgentMesh_Checkout', 'fold_addons_into_line' );
 $m->invoke( null, $order, $item_id, $product, 1, $addons );
 
 $order->calculate_totals();
-eq( 915.0, $order->get_total(), 'order total includes add-on surcharges (not just base price)' );
-eq( 915.0, $order->items[ $item_id ]->get_total(), 'the in-memory line item carries the surcharge total' );
+eq( 915.0, $order->get_total(), 'additive mode: order total = base + add-on surcharges' );
+eq( 915.0, $order->items[ $item_id ]->get_total(), 'additive mode: in-memory line carries base + surcharge' );
+
+// --- Absolute mode: line price = SUM of selected option prices, base ignored ---
+// Same add-ons (905 total), base 10, qty 2 → absolute line/order total must be 905×2 = 1810
+// (NOT (10+905)×2 = 1830). Mirrors the cart's absolute-pricing rule.
+$GLOBALS['_options']['agentmesh_addon_pricing_mode'] = 'absolute';
+$order2   = new Stub_Order();
+$product2 = new Stub_Product( 10.0 );
+$item_id2 = $order2->add_product( $product2, 2 );
+$m->invoke( null, $order2, $item_id2, $product2, 2, $addons );
+$order2->calculate_totals();
+eq( 1810.0, $order2->get_total(), 'absolute mode: order total = sum of option prices × qty (base ignored)' );
+eq( 1810.0, $order2->items[ $item_id2 ]->get_total(), 'absolute mode: in-memory line = option sum × qty' );
 
 echo "\nTotal: " . ( $pass + $fail ) . " Passed: $pass Failed: $fail\n";
 exit( $fail ? 1 : 0 );
