@@ -13,7 +13,7 @@ import {
 } from '@modelcontextprotocol/ext-apps';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { injectStyles } from './styles.js';
-import { renderProduct, renderProductList, renderCart, type ViewCtx } from './render.js';
+import { renderProduct, renderProductList, renderCart, renderMultiCart, type ViewCtx } from './render.js';
 import type { CardModel } from '../cards/types.js';
 import { isOpenAiHost, bootOpenAi } from './host-openai.js';
 
@@ -32,6 +32,7 @@ function renderModel(root: HTMLElement, model: CardModel, ctx: ViewCtx): void {
   if (model.kind === 'productList') renderProductList(root, model, ctx);
   else if (model.kind === 'product') renderProduct(root, model, ctx);
   else if (model.kind === 'cart') renderCart(root, model, ctx);
+  else if (model.kind === 'multiCart') renderMultiCart(root, model, ctx);
 }
 
 function applyHostTheme(app: App): void {

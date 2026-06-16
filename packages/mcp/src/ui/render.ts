@@ -12,6 +12,7 @@ import type {
   CartCardModel,
   CheckoutCardModel,
   CardAction,
+  MultiCartCardModel,
 } from '../cards/types.js';
 import { deriveAxes, resolveVariant, isValueAvailable } from './variantMatrix.js';
 import { COUNTRIES, DIAL_CODES, dialCodeFor } from '../countries.js';
@@ -2383,4 +2384,72 @@ function renderOrderStatusPanel(root: HTMLElement, order: Record<string, unknown
 
   card.appendChild(wrap);
   root.appendChild(card);
+}
+
+/** Render a multi-store cart card (quick_checkout result with one cart per store). */
+export function renderMultiCart(root: HTMLElement, model: MultiCartCardModel, ctx: ViewCtx): void {
+  root.replaceChildren();
+  const wrap = el('div', 'syn-card');
+  wrap.appendChild(el('div', 'syn-title', 'Your carts'));
+  wrap.appendChild(el('div', 'syn-muted', 'Each store is checked out and paid separately.'));
+
+  for (const store of model.carts) {
+    const card = el('div', 'syn-card');
+    card.style.marginTop = '12px';
+    card.appendChild(el('div', 'syn-title', store.storeName));
+
+    if (store.error) {
+      card.appendChild(el('div', 'syn-err', `Could not set up this store: ${store.error}`));
+      wrap.appendChild(card);
+      continue;
+    }
+
+    for (const it of store.items) {
+      const row = el('div', 'syn-row');
+      row.appendChild(el('div', 'syn-rowtitle', `${it.qty}× ${it.title}`));
+      row.appendChild(el('div', 'syn-muted', it.lineTotal));
+      card.appendChild(row);
+    }
+    card.appendChild(el('div', 'syn-muted', `Subtotal: ${store.subtotal}`));
+
+    for (const w of store.warnings) {
+      card.appendChild(el('div', 'syn-err',
+        `${w.product_id} ${w.reason === 'out_of_stock' ? 'is out of stock' : 'could not be added'}${w.restock_armed ? " — we'll email you when it's back" : ''}`));
+    }
+
+    if (store.shippingOptions.length > 0) {
+      card.appendChild(el('div', 'syn-muted', 'Delivery:'));
+      const opts = el('div', 'syn-options');
+      const buttons: HTMLButtonElement[] = [];
+      for (const o of store.shippingOptions) {
+        const b = el('button', 'syn-option') as HTMLButtonElement;
+        b.type = 'button';
+        const main = el('div', 'syn-opt-main');
+        main.appendChild(el('div', 'ttl', o.label));
+        main.appendChild(el('div', 'sub', `${o.description ? o.description + ' — ' : ''}${o.cost}`));
+        b.appendChild(main);
+        buttons.push(b);
+        b.onclick = async () => {
+          // Confirm the choice in-card (the View doesn't refetch totals; the final total
+          // is shown when the buyer continues that store's checkout).
+          for (const other of buttons) { other.classList.remove('is-sel'); other.disabled = false; }
+          b.classList.add('is-sel'); b.disabled = true;
+          try {
+            await ctx.callTool('select_shipping_option', { site_id: store.siteId, cart_id: store.cartId, option_id: o.optionId });
+          } catch (err) { b.classList.remove('is-sel'); b.disabled = false; showButtonError(b, err); }
+        };
+        opts.appendChild(b);
+      }
+      card.appendChild(opts);
+    }
+
+    const cta = el('button', 'syn-btn syn-btn-primary syn-btn-block', `Continue checkout — ${store.storeName}`) as HTMLButtonElement;
+    cta.type = 'button';
+    cta.onclick = () => {
+      ctx.sendMessage?.(`Continue checkout for ${store.storeName} (cart ${store.cartId}).`);
+    };
+    card.appendChild(cta);
+    wrap.appendChild(card);
+  }
+  root.appendChild(wrap);
 }

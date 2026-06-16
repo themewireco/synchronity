@@ -38,6 +38,12 @@ const RESOURCES: UiResourceDef[] = [
     description: 'Interactive cart card with line items, totals, and remove actions.',
     bundle: 'cart.global.js',
   },
+  {
+    uri: 'ui://synchronity/multi-cart',
+    name: 'Synchronity multi-store cart',
+    description: 'Rich cart card per store for a multi-store quick checkout.',
+    bundle: 'multi-cart.global.js',
+  },
 ];
 
 /**

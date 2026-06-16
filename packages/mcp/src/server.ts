@@ -164,8 +164,68 @@ const TOOL_DEFINITIONS: Tool[] = [
           type: 'object',
           description: "Selected product add-ons as a map of addon_id -> chosen value(s). For select/radio/boolean pass a single value; for checkbox/multi pass an array; for text/number pass the value. Values for choice add-ons MUST come from the product's addons[].options[].value. Collect any addon with required:true before checkout.",
         },
+        items: {
+          type: 'array',
+          description: 'Add several products in ONE call instead of calling this tool repeatedly. Each entry: { product_id, quantity, variant_id?, addons? }. Out-of-stock items are reported; pass `email` to auto-arm a back-in-stock alert for them.',
+          items: {
+            type: 'object',
+            properties: {
+              product_id: { type: 'string' },
+              quantity: { type: 'integer' },
+              variant_id: { type: 'string' },
+              addons: { type: 'object' },
+            },
+            required: ['product_id', 'quantity'],
+          },
+        },
+        email: { type: 'string', description: "Buyer email; arms a back-in-stock alert for any out-of-stock item in items[]." },
       },
-      required: ['site_id', 'cart_id', 'product_id', 'quantity'],
+      // Only site_id is hard-required: cart_id is resolved/created by the impl, and
+      // product_id+quantity are the single-add alternative to items[] (enforced at runtime).
+      required: ['site_id'],
+    },
+  },
+  {
+    name: 'quick_checkout',
+    annotations: { title: 'Quick checkout (build carts)', readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+    description:
+      'Assemble checkout-ready cart(s) in ONE call for a multi-product (and optionally multi-store) request. Creates a cart per store, adds all items, and sets the shipping address — then returns the cart(s) with delivery options to choose. Use this when the buyer lists several products at once (optionally across stores) and/or gives their address up front, instead of calling create_cart/add_to_cart/set_shipping_address separately. Does NOT select delivery, check out, or pay — the buyer picks delivery (select_shipping_option) and approves checkout/payment per store afterward. Out-of-stock items are reported; pass customer.email to auto-arm a back-in-stock alert for them.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        items: {
+          type: 'array',
+          description: 'Products to buy. Each entry: { site_id, product_id, quantity, variant_id?, addons? }. Items may span multiple stores (grouped by site_id).',
+          items: {
+            type: 'object',
+            properties: {
+              site_id: { type: 'string' },
+              product_id: { type: 'string' },
+              quantity: { type: 'integer' },
+              variant_id: { type: 'string' },
+              addons: { type: 'object' },
+            },
+            required: ['site_id', 'product_id', 'quantity'],
+          },
+        },
+        shipping_address: {
+          type: 'object',
+          description: 'Buyer delivery address (applied to every store).',
+          properties: {
+            country_code: { type: 'string', description: '2-letter ISO country code (required).' },
+            postal_code: { type: 'string' },
+            state: { type: 'string' },
+            city: { type: 'string' },
+          },
+          required: ['country_code'],
+        },
+        customer: {
+          type: 'object',
+          description: 'Optional buyer contact carried for checkout; customer.email arms back-in-stock alerts for out-of-stock items.',
+          properties: { name: { type: 'string' }, email: { type: 'string' }, phone: { type: 'string' } },
+        },
+      },
+      required: ['items', 'shipping_address'],
     },
   },
   {

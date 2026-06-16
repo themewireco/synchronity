@@ -13,6 +13,7 @@ import type {
   CartCardModel,
   CheckoutCardModel,
   DelegationCardModel,
+  MultiCartCardModel,
 } from './types.js';
 
 function stock(inStock: boolean): string {
@@ -204,6 +205,19 @@ export function siteListMarkdown(data: any): string {
   ].join('\n');
 }
 
+function multiCart(m: MultiCartCardModel): string {
+  const blocks = m.carts.map((c) => {
+    if (c.error) {
+      return [`**${c.storeName}**`, '', `⚠ Could not set up this store: ${c.error}`].join('\n');
+    }
+    const itemLines = c.items.map((it) => `- ${it.qty}× ${it.title} (${it.lineTotal})`);
+    const warnLines = c.warnings.map((w) => `  ⚠ ${w.product_id} ${w.reason}${w.restock_armed ? ' (alert armed)' : ''}`);
+    return [`**${c.storeName}** — cart \`${c.cartId}\``, '', ...itemLines, `Subtotal: ${c.subtotal}`, ...warnLines].join('\n');
+  });
+  return ['**Your carts** (paid separately per store)', '', blocks.join('\n\n---\n\n'),
+    '', '_Choose delivery + check out each store with `select_shipping_option` / `execute_checkout`._'].join('\n');
+}
+
 /** Render a CardModel as a Markdown text fallback for hosts without widget support. */
 export function markdownFallback(model: CardModel): string {
   switch (model.kind) {
@@ -217,6 +231,8 @@ export function markdownFallback(model: CardModel): string {
       return checkout(model);
     case 'delegation':
       return delegation(model);
+    case 'multiCart':
+      return multiCart(model);
     default: {
       // Exhaustiveness guard — keeps this in sync if a new card kind is added.
       const _never: never = model;

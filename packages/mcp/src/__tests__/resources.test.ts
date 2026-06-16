@@ -5,7 +5,7 @@ describe('MCP Apps UI resources', () => {
   it('lists the two product Views with the mcp-app mime + _meta.ui CSP', () => {
     const res = listUiResources();
     const uris = res.map((r) => r.uri).sort();
-    expect(uris).toEqual(['ui://synchronity/cart', 'ui://synchronity/product', 'ui://synchronity/product-list']);
+    expect(uris).toEqual(['ui://synchronity/cart', 'ui://synchronity/multi-cart', 'ui://synchronity/product', 'ui://synchronity/product-list']);
     for (const r of res) {
       expect(r.mimeType).toBe(RESOURCE_MIME_TYPE);
       expect((r as any)._meta.ui.csp).toBeDefined();

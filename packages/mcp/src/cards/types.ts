@@ -88,6 +88,23 @@ export interface CartCardModel {
   total: string;
 }
 
+export interface PerStoreCart {
+  siteId: string;
+  storeName: string;
+  cartId: string;
+  items: CartLine[];
+  subtotal: string;
+  shippingOptions: ShippingChoice[];
+  warnings: { product_id: string; reason: 'out_of_stock' | 'add_failed'; restock_armed: boolean }[];
+  /** Set when this store could not be assembled (e.g. cart create failed); render an error, not an empty cart. */
+  error?: string;
+}
+
+export interface MultiCartCardModel {
+  kind: 'multiCart';
+  carts: PerStoreCart[];
+}
+
 export interface ShippingChoice {
   optionId: string;
   label: string;
@@ -122,7 +139,8 @@ export type CardModel =
   | ProductListCardModel
   | CartCardModel
   | CheckoutCardModel
-  | DelegationCardModel;
+  | DelegationCardModel
+  | MultiCartCardModel;
 
 import type { MCPContent } from '../types.js';
 
