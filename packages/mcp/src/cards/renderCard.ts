@@ -15,6 +15,7 @@ const RESOURCE_URI: Record<CardModel['kind'], string> = {
   cart: 'ui://synchronity/cart',
   checkout: 'ui://synchronity/checkout',
   delegation: 'ui://synchronity/delegation',
+  multiCart: 'ui://synchronity/multi-cart',
 };
 
 /**

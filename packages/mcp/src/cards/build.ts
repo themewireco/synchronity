@@ -1,6 +1,6 @@
 // sdk/mcp/src/cards/build.ts
 import type {
-  CardModel, ProductCardModel, CartCardModel, CheckoutCardModel, DelegationCardModel, CartLine, ProductListCardModel, ProductCardAddon, ProductCardVariant,
+  CardModel, ProductCardModel, CartCardModel, CheckoutCardModel, DelegationCardModel, CartLine, ProductListCardModel, ProductCardAddon, ProductCardVariant, MultiCartCardModel,
 } from './types.js';
 
 function money(m?: { amount: string; currency: string }): string {
@@ -187,6 +187,26 @@ export function buildDelegationCard(d: any): DelegationCardModel {
     scopes: d.scopes ?? [],
     approvalUrl: d.approvalUrl,
     otpEntry: !!d.otp,
+  };
+}
+
+export function buildMultiCartCard(
+  perStore: Array<{ siteId: string; storeName?: string; cart: any; warnings?: any[]; error?: string }>,
+): MultiCartCardModel {
+  return {
+    kind: 'multiCart',
+    carts: perStore.map((s) => ({
+      siteId: s.siteId,
+      storeName: s.storeName ?? s.siteId,
+      cartId: s.cart?.cart_id ?? '',
+      items: lines(s.cart, s.siteId),
+      subtotal: money(s.cart?.subtotal),
+      shippingOptions: (s.cart?.shipping_options ?? []).map((o: any) => ({
+        optionId: o.option_id, label: o.title, description: o.description, cost: money(o.cost),
+      })),
+      warnings: s.warnings ?? [],
+      ...(s.error ? { error: s.error } : {}),
+    })),
   };
 }
 

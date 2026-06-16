@@ -26,7 +26,7 @@ import type { MCPContent } from './types.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { toLeanProduct } from './dto.js';
 import { textResult, cardResult } from './cards/renderCard.js';
-import { buildProductCard, buildProductListCard, buildCartCard, buildCheckoutCard, buildDelegationCard } from './cards/build.js';
+import { buildProductCard, buildProductListCard, buildCartCard, buildCheckoutCard, buildDelegationCard, buildMultiCartCard } from './cards/build.js';
 import { markdownFallback, orderMarkdown, orderListMarkdown, siteListMarkdown } from './cards/markdown.js';
 import { rememberSiteNames, siteNameFor } from './cards/siteNames.js';
 import { inlineCardImages } from './cards/inlineImages.js';
@@ -136,58 +136,60 @@ export const createCart: ToolImplementation = async (client, args) => {
 };
 
 /**
- * Tool: Add item to cart
+ * Tool: Add item(s) to cart
+ * Accepts either a single product (product_id + quantity, back-compat) or an
+ * items[] array so multiple products can be added in ONE tool call.
  */
 export const addToCart: ToolImplementation = async (client, args) => {
-  const { site_id, product_id, quantity, variant_id, addons } = args;
+  const { site_id, product_id, quantity, variant_id, addons, email, items } = args as any;
   let cart_id = args.cart_id as string | undefined;
+  if (!site_id) throw new Error('site_id is required');
 
-  if (!site_id || !product_id || !quantity) {
-    throw new Error('site_id, product_id, and quantity are required');
+  const itemList: AddItemInput[] = Array.isArray(items) && items.length > 0
+    ? items
+    : (product_id && quantity
+        ? [{ product_id, quantity, variant_id, ...(addons ? { addons } : {}) }]
+        : []);
+  if (itemList.length === 0) {
+    throw new Error('Provide either items[] or product_id + quantity');
   }
 
-  const item = {
-    product_id: product_id as string,
-    quantity: quantity as number,
-    variant_id: variant_id as string | undefined,
-    ...(addons ? { addons: addons as Record<string, string | string[] | boolean | number> } : {}),
-  };
-
-  // Ensure a cart exists. The cart_id is supplied by the caller (model context /
-  // View); only create one if none was provided.
+  // Ensure a cart exists (resume in-progress, else create) — unchanged behavior.
   if (!cart_id) {
-    // Try to resume an existing in-progress cart first (preserves prior items).
     const active = await client.cart.getActive(site_id as string).catch(() => null);
-    if (active && (active as any).cart_id) {
-      cart_id = (active as any).cart_id;
-    } else {
-      const created = await client.cart.create(site_id as string);
-      cart_id = created.cart_id;
-    }
+    cart_id = active && (active as any).cart_id
+      ? (active as any).cart_id
+      : (await client.cart.create(site_id as string)).cart_id;
   }
 
-  let updatedCart;
-  try {
-    updatedCart = await client.cart.addItem(site_id as string, cart_id as string, item);
-  } catch (err) {
-    // The cart was consumed/expired (e.g. after a checkout or failed payment in the
-    // same session). Try to resume from buyer_carts first; fall back to a fresh cart.
-    if (isCartNotFound(err)) {
-      const active = await client.cart.getActive(site_id as string).catch(() => null);
-      if (active && (active as any).cart_id) {
-        cart_id = (active as any).cart_id;
-      } else {
-        const created = await client.cart.create(site_id as string);
-        cart_id = created.cart_id;
-      }
-      updatedCart = await client.cart.addItem(site_id as string, cart_id as string, item);
-    } else {
-      throw err;
-    }
+  let { cart, warnings } = await addItemsWithStockCheck(
+    client as any, site_id as string, cart_id as string, itemList, { email: email as string | undefined },
+  );
+
+  // A supplied cart_id may be stale (cart expired/consumed after a prior checkout in the same
+  // session). The helper records that as add_failed warnings carrying the error message; detect
+  // it, resume/create a fresh cart, and retry the batch once — preserving the old retry semantics.
+  if (warnings.some((w) => w.reason === 'add_failed' && isCartNotFound(w.message ?? ''))) {
+    const active = await client.cart.getActive(site_id as string).catch(() => null);
+    cart_id = active && (active as any).cart_id
+      ? (active as any).cart_id
+      : (await client.cart.create(site_id as string)).cart_id;
+    ({ cart, warnings } = await addItemsWithStockCheck(
+      client as any, site_id as string, cart_id as string, itemList, { email: email as string | undefined },
+    ));
   }
 
-  const cartModel = buildCartCard(updatedCart as any, site_id as string);
-  return cardResult(await inlineCardImages(cartModel));
+  const cartModel = buildCartCard(cart as any, site_id as string);
+  const card = cardResult(await inlineCardImages(cartModel));
+  if (warnings.length > 0) {
+    const note = warnings.map((w) =>
+      w.reason === 'out_of_stock'
+        ? `${w.product_id} is out of stock${w.restock_armed ? " — I'll email you when it's back" : ''}`
+        : `${w.product_id} could not be added${w.message ? ` (${w.message})` : ''}`,
+    ).join('; ');
+    card.content = [{ type: 'text', text: `${(card.content?.[0] as any)?.text ?? ''}\n\n_Note: ${note}._` }];
+  }
+  return card;
 };
 
 /**
@@ -681,6 +683,155 @@ export const selectShippingOption: ToolImplementation = async (client, args) => 
   };
 };
 
+// ── addItemsWithStockCheck ───────────────────────────────────────────────────
+
+export interface AddItemInput {
+  product_id: string;
+  quantity: number;
+  variant_id?: string;
+  addons?: Record<string, string | string[] | boolean | number>;
+}
+
+export interface CartWarning {
+  product_id: string;
+  reason: 'out_of_stock' | 'add_failed';
+  restock_armed: boolean;
+  /** Underlying error message for a non-stock `add_failed` (surfaceable to the buyer). */
+  message?: string;
+}
+
+/**
+ * Add items to a cart one at a time so each item's outcome is known. On a failed add,
+ * check the product's availability; if out of stock, record a warning and (when an email
+ * is given) arm a back-in-stock alert. Other failures become a plain warning. Never throws
+ * for a single bad item — returns the latest cart + the collected warnings.
+ */
+export async function addItemsWithStockCheck(
+  client: any,
+  siteId: string,
+  cartId: string,
+  items: AddItemInput[],
+  opts: { email?: string },
+): Promise<{ cart: any; warnings: CartWarning[] }> {
+  const warnings: CartWarning[] = [];
+  let cart: any;
+  for (const item of items) {
+    const payload = {
+      product_id: item.product_id,
+      quantity: item.quantity,
+      variant_id: item.variant_id,
+      ...(item.addons ? { addons: item.addons } : {}),
+    };
+    try {
+      cart = await client.cart.addItem(siteId, cartId, payload);
+    } catch (addErr) {
+      let availability: string | undefined;
+      let title: string | undefined;
+      try {
+        const product = await client.products.getById(siteId, item.product_id);
+        availability = product?.availability;
+        title = product?.title;
+      } catch {
+        // getById failed — fall through to a generic add_failed warning.
+      }
+      if (availability === 'out_of_stock') {
+        let armed = false;
+        if (opts.email) {
+          try {
+            await client.products.notifyRestock(siteId, item.product_id, {
+              email: opts.email,
+              ...(item.variant_id ? { variant_id: item.variant_id } : {}),
+              ...(title ? { product_title: title } : {}),
+            });
+            armed = true;
+          } catch {
+            armed = false; // best-effort; never abort the cart build
+          }
+        }
+        warnings.push({ product_id: item.product_id, reason: 'out_of_stock', restock_armed: armed });
+      } else {
+        warnings.push({
+          product_id: item.product_id,
+          reason: 'add_failed',
+          restock_armed: false,
+          message: addErr instanceof Error ? addErr.message : String(addErr),
+        });
+      }
+    }
+  }
+  if (!cart) {
+    // Honor the no-throw contract even if the cart itself is gone.
+    cart = await client.cart.get(siteId, cartId).catch(() => null);
+  }
+  return { cart, warnings };
+}
+
+/**
+ * Tool: Assemble checkout-ready cart(s) in one call, grouping items by site_id.
+ * Single store → returns a checkout card; multi-store → returns a multiCart card.
+ */
+export const quickCheckout: ToolImplementation = async (client, args) => {
+  const items = (args as any).items as Array<{ site_id: string } & AddItemInput>;
+  const shipping = (args as any).shipping_address as { country_code: string; postal_code?: string; state?: string; city?: string };
+  const customer = (args as any).customer as { name?: string; email?: string; phone?: string } | undefined;
+  if (!Array.isArray(items) || items.length === 0) throw new Error('items[] is required');
+  if (!shipping?.country_code) throw new Error('shipping_address.country_code is required');
+
+  // Group items by site_id (one cart per store).
+  const bySite = new Map<string, AddItemInput[]>();
+  for (const it of items) {
+    if (!it.site_id) throw new Error('each item needs a site_id');
+    const list = bySite.get(it.site_id) ?? [];
+    list.push({ product_id: it.product_id, quantity: it.quantity, ...(it.variant_id ? { variant_id: it.variant_id } : {}), ...(it.addons ? { addons: it.addons } : {}) });
+    bySite.set(it.site_id, list);
+  }
+
+  const destination = {
+    country_code: shipping.country_code,
+    ...(shipping.postal_code ? { postal_code: shipping.postal_code } : {}),
+    ...(shipping.state ? { state: shipping.state } : {}),
+    ...(shipping.city ? { city: shipping.city } : {}),
+  };
+
+  // Assemble one cart per store — isolated so one store's failure doesn't abort the rest.
+  const perStore: Array<{ siteId: string; cart: any; warnings: CartWarning[]; error?: string }> = [];
+  for (const [siteId, siteItems] of bySite) {
+    try {
+      // quick_checkout starts a FRESH cart per store for the given item list (unlike add_to_cart,
+      // which resumes an active cart) — the buyer is specifying exactly what they want to buy now.
+      const created = await client.cart.create(siteId);
+      const { cart, warnings } = await addItemsWithStockCheck(client as any, siteId, created.cart_id, siteItems, { email: customer?.email });
+      const withShipping = await client.cart.setShippingAddress(siteId, created.cart_id, destination);
+      perStore.push({ siteId, cart: withShipping ?? cart, warnings });
+    } catch (err) {
+      perStore.push({ siteId, cart: { cart_id: '', items: [] }, warnings: [], error: (err as Error).message });
+    }
+  }
+
+  // Single store → existing rich checkout card; multi → multiCart View.
+  if (perStore.length === 1) {
+    const s = perStore[0];
+    const model = await inlineCardImages(buildCheckoutCard(s.cart as any, s.siteId));
+    const card = cardResult(model);
+    if (s.warnings.length || s.error) {
+      const note = s.error
+        ? `Could not set up this store: ${s.error}`
+        : s.warnings.map((w) => `${w.product_id} ${w.reason === 'out_of_stock' ? `out of stock${w.restock_armed ? ' — alert armed' : ''}` : `could not be added${w.message ? ` (${w.message})` : ''}`}`).join('; ');
+      card.content = [{ type: 'text', text: `${(card.content?.[0] as any)?.text ?? ''}\n\n_Note: ${note}._` }];
+    }
+    return card;
+  }
+
+  const multi = buildMultiCartCard(perStore.map((s) => ({
+    siteId: s.siteId,
+    storeName: siteNameFor(s.siteId),
+    cart: s.cart,
+    warnings: s.warnings,
+    ...(s.error ? { error: s.error } : {}),
+  })));
+  return cardResult(multi);
+};
+
 /**
  * Map scope codes to user-friendly labels
  */
@@ -706,6 +857,7 @@ export const TOOL_IMPLEMENTATIONS: Record<string, ToolImplementation> = {
   compare_products: compareProducts,
   create_cart: createCart,
   add_to_cart: addToCart,
+  quick_checkout: quickCheckout,
   remove_from_cart: removeFromCart,
   set_cart_quantity: setCartQuantity,
   apply_coupon: applyCoupon,

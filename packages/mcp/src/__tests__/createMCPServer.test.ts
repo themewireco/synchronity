@@ -10,6 +10,7 @@ const EXPECTED_TOOLS = [
   'compare_products',
   'create_cart',
   'add_to_cart',
+  'quick_checkout',
   'remove_from_cart',
   'set_cart_quantity',
   'apply_coupon',
@@ -101,9 +102,13 @@ describe('createMCPServer()', () => {
     expect(addToCart).toBeDefined();
     expect(addToCart!.inputSchema.properties.addons).toBeDefined();
     expect(addToCart!.inputSchema.properties.addons.type).toBe('object');
-    // addons is optional — required fields unchanged.
+    // addons is optional. Only site_id is hard-required now: cart_id is resolved/created by the
+    // impl, and product_id+quantity are the single-add alternative to the items[] batch param.
     expect(addToCart!.inputSchema.required).not.toContain('addons');
-    expect(addToCart!.inputSchema.required).toEqual(['site_id', 'cart_id', 'product_id', 'quantity']);
+    expect(addToCart!.inputSchema.required).toEqual(['site_id']);
+    // items[] batch param is exposed and optional.
+    expect(addToCart!.inputSchema.properties.items).toBeDefined();
+    expect(addToCart!.inputSchema.required).not.toContain('items');
   });
 });
 
