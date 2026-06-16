@@ -9,7 +9,7 @@ const cart = {
   subtotal: { amount: '26.00', currency: 'USD' },
   total: { amount: '31.00', currency: 'USD' },
   shipping_total: { amount: '5.00', currency: 'USD' },
-  shipping_options: [{ option_id: 'std', title: 'Standard', description: '5-7 business days', cost: { amount: '5.00', currency: 'USD' } }],
+  shipping_options: [{ option_id: 'std', title: 'Standard', description: '5-7 business days', amount: { amount: '5.00', currency: 'USD' } }],
   selected_shipping_option_id: 'std',
 };
 

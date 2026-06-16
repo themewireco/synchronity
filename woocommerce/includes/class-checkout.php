@@ -337,8 +337,16 @@ class AgentMesh_Checkout {
 		$line_item->add_meta_data( '_agentmesh_addons', wp_json_encode( $selected_addons ), true );
 
 		if ( 0.0 !== $addon_per_unit ) {
-			$base_unit  = (float) $product->get_price();
-			$line_value = ( $base_unit + $addon_per_unit ) * $quantity;
+			// Honor the merchant's add-on pricing mode (mirrors class-cart.php add_item).
+			// 'absolute' (opt-in): the line price IS the sum of selected option prices —
+			// the base is ignored. Default 'additive': base + the surcharge.
+			$pricing_mode = (string) get_option( 'agentmesh_addon_pricing_mode', 'additive' );
+			if ( 'absolute' === $pricing_mode && $addon_per_unit > 0 ) {
+				$line_value = $addon_per_unit * $quantity;
+			} else {
+				$base_unit  = (float) $product->get_price();
+				$line_value = ( $base_unit + $addon_per_unit ) * $quantity;
+			}
 			$line_item->set_subtotal( $line_value );
 			$line_item->set_total( $line_value );
 		}

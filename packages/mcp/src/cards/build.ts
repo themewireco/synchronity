@@ -168,8 +168,9 @@ export function buildCheckoutCard(cart: any, siteId: string): CheckoutCardModel 
     siteId,
     cartId: cart.cart_id,
     items: lines(cart, siteId),
+    // AMPSShippingOption carries the fee under `amount` (a MonetaryAmount) — NOT `cost`.
     shippingOptions: (cart.shipping_options ?? []).map((o: any) => ({
-      optionId: o.option_id, label: o.title, description: o.description, cost: money(o.cost),
+      optionId: o.option_id, label: o.title, description: o.description, cost: money(o.amount),
     })),
     selectedShippingId: cart.selected_shipping_option_id,
     subtotal: money(cart.subtotal),
@@ -202,7 +203,7 @@ export function buildMultiCartCard(
       items: lines(s.cart, s.siteId),
       subtotal: money(s.cart?.subtotal),
       shippingOptions: (s.cart?.shipping_options ?? []).map((o: any) => ({
-        optionId: o.option_id, label: o.title, description: o.description, cost: money(o.cost),
+        optionId: o.option_id, label: o.title, description: o.description, cost: money(o.amount),
       })),
       warnings: s.warnings ?? [],
       ...(s.error ? { error: s.error } : {}),
