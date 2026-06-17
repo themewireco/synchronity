@@ -122,6 +122,7 @@ export function buildProductCard(p: any, siteId: string, cartId?: string): Produ
     url: p.url ?? undefined,
     inStock: p.availability === 'in_stock',
     addons: buildAddons(p.addons),
+    addonPricingMode: p.addon_pricing_mode === 'absolute' ? 'absolute' : undefined,
     variants: buildVariants(p.variants),
     addToCart: { label: 'Add to cart', toolName: 'add_to_cart',
       params: { site_id: siteId, product_id: p.product_id, quantity: 1, ...(cartId ? { cart_id: cartId } : {}) } },

@@ -1011,7 +1011,14 @@ function renderOptionsWizard(
     groups
       .filter((g) => g.key.startsWith('addon:'))
       .reduce((s, g) => s + (selected[g.key] ?? []).reduce((t, v) => t + (modifiers.get(modKey(g.key, v)) ?? 0), 0), 0);
-  const lineTotal = () => formatPriceLike((variantBase() + addonMod()) * qtyState.n, base);
+  // Honor the merchant's add-on pricing mode so the preview matches the cart/checkout.
+  // 'absolute' (with a priced add-on selected) → the line IS the add-on sum, base ignored;
+  // otherwise additive (base + add-ons).
+  const unitPrice = () => {
+    const mod = addonMod();
+    return model.addonPricingMode === 'absolute' && mod > 0 ? mod : variantBase() + mod;
+  };
+  const lineTotal = () => formatPriceLike(unitPrice() * qtyState.n, base);
 
   const heroImageUrl = () =>
     (selectedVariant?.image) || model.image || model.images?.[0] || '';

@@ -72,11 +72,16 @@ class AgentMesh_Normaliser {
 			],
 		];
 
-		// ACF add-ons (additive — omitted when none / ACF inactive).
+		// ACF add-ons (omitted when none / ACF inactive). Carry the merchant's add-on
+		// pricing mode so clients price the line the same way the cart/checkout does:
+		// 'absolute' → line = sum of selected option prices (base ignored); 'additive'
+		// (default) → base + option prices.
 		if ( class_exists( 'AgentMesh_Addons' ) ) {
 			$addons = AgentMesh_Addons::extract_addons( $product );
 			if ( ! empty( $addons ) ) {
 				$amps['addons'] = $addons;
+				$mode = (string) get_option( 'agentmesh_addon_pricing_mode', 'additive' );
+				$amps['addon_pricing_mode'] = ( 'absolute' === $mode ) ? 'absolute' : 'additive';
 			}
 		}
 

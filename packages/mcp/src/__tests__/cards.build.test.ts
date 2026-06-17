@@ -38,6 +38,19 @@ describe('card model builders', () => {
     expect(m).toMatchObject({ productId: 'p1', title: 'Vintage Tee', price: '$26.00', image: 'https://img/x.jpg', inStock: true });
   });
 
+  it('buildProductCard carries addon_pricing_mode=absolute as addonPricingMode', () => {
+    const m = buildProductCard({ product_id: 'p1', title: 'Box', price: { amount: '578.00', currency: 'GHS' },
+      availability: 'in_stock', addon_pricing_mode: 'absolute',
+      addons: [{ addon_id: 'size', label: 'Size', type: 'select', options: [{ value: 's', label: 'S', price_modifier: { amount: '578.00', currency: 'GHS' } }] }] } as any, 's1');
+    expect(m.addonPricingMode).toBe('absolute');
+  });
+
+  it('buildProductCard leaves addonPricingMode undefined for additive (default)', () => {
+    const m = buildProductCard({ product_id: 'p2', title: 'Box', price: { amount: '10.00', currency: 'USD' },
+      availability: 'in_stock', addon_pricing_mode: 'additive' } as any, 's1');
+    expect(m.addonPricingMode).toBeUndefined();
+  });
+
   it('buildDelegationCard carries the device code, scopes, and approval url', () => {
     const m = buildDelegationCard({ device_code: 'd1', user_code: 'WXYZ', scopes: ['execute_checkout'],
       siteName: 'My Store', approvalUrl: 'https://gw/authorize?user_code=WXYZ', otp: true } as any);

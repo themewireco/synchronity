@@ -43,6 +43,9 @@ export interface ProductCardModel {
   url?: string;
   inStock: boolean;
   addons?: ProductCardAddon[];
+  /** 'absolute' → the options wizard prices the line as the SUM of selected option
+   *  prices (base ignored), matching the cart; undefined/absent → additive (base + options). */
+  addonPricingMode?: 'absolute';
   variants?: ProductCardVariant[]; // present → options wizard offers a variant step
   addToCart: CardAction;
 }
