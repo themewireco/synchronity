@@ -1637,6 +1637,18 @@ function renderDelegationRequestStep(
   inputEmail.value = state.delegationEmail || '';
   groupEmail.appendChild(inputEmail);
   form.appendChild(groupEmail);
+
+  // Marketing opt-in (default UNCHECKED — explicit consent only).
+  const optInRow = el('label', 'syn-form-group') as HTMLLabelElement;
+  optInRow.style.display = 'flex';
+  optInRow.style.alignItems = 'center';
+  optInRow.style.gap = '8px';
+  optInRow.style.cursor = 'pointer';
+  const optInBox = el('input') as HTMLInputElement;
+  optInBox.type = 'checkbox';
+  optInRow.append(optInBox, el('span', 'syn-muted', 'Email me deals & updates'));
+  form.appendChild(optInRow);
+
   card.appendChild(form);
 
   const backBtn = el('button', 'syn-btn syn-btn-ghost', 'Back') as HTMLButtonElement;
@@ -1662,6 +1674,7 @@ function renderDelegationRequestStep(
       const res = await ctx.callTool('request_delegation', {
         site_id: state.siteId,
         email: email,
+        ...(optInBox.checked ? { marketing_opt_in: true } : {}),
       });
 
       if (res.isError) throw new Error(textOf(res) || 'Failed to request delegation');

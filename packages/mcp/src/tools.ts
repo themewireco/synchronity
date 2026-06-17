@@ -440,7 +440,7 @@ export const listSites: ToolImplementation = async (client, args, config) => {
  * Tool: Request human delegation (device flow initiation)
  */
 export const requestDelegation: ToolImplementation = async (client, args, config, server) => {
-  const { site_id, scopes, email } = args;
+  const { site_id, scopes, email, marketing_opt_in } = args;
   if (!site_id) throw new Error('site_id is required');
   const resolvedScopes = Array.isArray(scopes) && scopes.length > 0
     ? scopes
@@ -453,10 +453,19 @@ export const requestDelegation: ToolImplementation = async (client, args, config
       Authorization: `Bearer ${config.ait}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ site_id, scopes: resolvedScopes, ...(email ? { email } : {}) }),
+    body: JSON.stringify({
+      site_id,
+      scopes: resolvedScopes,
+      ...(email ? { email } : {}),
+      ...(marketing_opt_in === true ? { marketing_opt_in: true } : {}),
+    }),
   });
   const data = await res.json() as Record<string, unknown>;
-  if (!res.ok) throw new Error(JSON.stringify(data));
+  if (!res.ok) {
+    // Surface a human-readable message, not a raw JSON dump.
+    const msg = (data as any)?.error?.message ?? (data as any)?.message ?? `Delegation request failed (HTTP ${res.status}).`;
+    throw new Error(String(msg));
+  }
 
   const device_code = data.device_code as string;
 
