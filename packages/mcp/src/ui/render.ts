@@ -1638,15 +1638,27 @@ function renderDelegationRequestStep(
   groupEmail.appendChild(inputEmail);
   form.appendChild(groupEmail);
 
-  // Marketing opt-in (default UNCHECKED — explicit consent only).
-  const optInRow = el('label', 'syn-form-group') as HTMLLabelElement;
+  // Marketing opt-in (default UNCHECKED — explicit consent only). Inline checkbox + label,
+  // left-aligned, using the brand accent for the checked state.
+  const optInRow = el('label') as HTMLLabelElement;
   optInRow.style.display = 'flex';
   optInRow.style.alignItems = 'center';
+  optInRow.style.justifyContent = 'flex-start';
   optInRow.style.gap = '8px';
   optInRow.style.cursor = 'pointer';
+  optInRow.style.margin = '4px 2px 0';
+  optInRow.style.textAlign = 'left';
   const optInBox = el('input') as HTMLInputElement;
   optInBox.type = 'checkbox';
-  optInRow.append(optInBox, el('span', 'syn-muted', 'Email me deals & updates'));
+  optInBox.style.width = '16px';
+  optInBox.style.height = '16px';
+  optInBox.style.margin = '0';
+  optInBox.style.flex = '0 0 auto';
+  optInBox.style.accentColor = 'var(--syn-green)';
+  optInBox.style.cursor = 'pointer';
+  const optInLabel = el('span', 'syn-muted', 'Email me deals & updates');
+  optInLabel.style.lineHeight = '1';
+  optInRow.append(optInBox, optInLabel);
   form.appendChild(optInRow);
 
   card.appendChild(form);
