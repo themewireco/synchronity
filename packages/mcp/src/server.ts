@@ -424,6 +424,7 @@ const TOOL_DEFINITIONS: Tool[] = [
           items: { type: 'string', enum: ['read_products', 'manage_cart', 'execute_checkout', 'read_orders'] },
           description: 'Scopes to request (defaults to all four scopes)',
         },
+        marketing_opt_in: { type: 'boolean', description: 'Set true ONLY if the buyer explicitly agreed to receive marketing/deals emails (e.g. ticked the opt-in box). Subscribes their email to the consumer mailing list.' },
       },
       required: ['site_id'],
     },
