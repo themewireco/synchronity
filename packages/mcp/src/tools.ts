@@ -154,7 +154,26 @@ export const compareProducts: ToolImplementation = async (client, args) => {
 
   const c = comparison as { results?: Array<{ products?: unknown[] }> };
   const leanResults = c.results?.map((r) => ({ ...r, products: (r.products ?? []).map((p) => toLeanProduct(p as any)) }));
-  return JSON.stringify({ ...(comparison as object), results: leanResults ?? (comparison as any).results });
+  const structured = { ...(comparison as object), results: leanResults ?? (comparison as any).results };
+
+  // Human-readable per-store summary; structuredContent keeps the full lean data.
+  const lines: string[] = [`**Comparing "${query}" across ${(leanResults ?? []).length} store(s):**`, ''];
+  for (const r of (leanResults ?? []) as Array<any>) {
+    const storeName = siteNameFor(String(r.site_id ?? '')) || r.site_name || r.site_id || 'Store';
+    const prods = (r.products ?? []) as Array<any>;
+    lines.push(`**${storeName}**`);
+    if (prods.length === 0) {
+      lines.push('- No matches');
+    } else {
+      for (const p of prods.slice(0, 5)) {
+        const price = p.price ? `${p.price.currency ?? ''} ${p.price.amount ?? ''}`.trim() : '';
+        lines.push(`- ${p.title}${price ? ` — ${price}` : ''}`);
+      }
+      if (prods.length > 5) lines.push(`- …and ${prods.length - 5} more`);
+    }
+    lines.push('');
+  }
+  return { content: [{ type: 'text', text: lines.join('\n').trimEnd() }], structuredContent: structured };
 };
 
 /** True if an error from the gateway means the cart no longer exists (expired/consumed). */
@@ -174,7 +193,11 @@ export const createCart: ToolImplementation = async (client, args) => {
   }
 
   const cart = await client.cart.create(site_id as string, currency as string | undefined);
-  return JSON.stringify(cart);
+  const cartId = (cart as any)?.cart_id ?? '';
+  return {
+    content: [{ type: 'text', text: `New cart created${cartId ? ` (ID: \`${cartId}\`)` : ''}. Add items with add_to_cart.` }],
+    structuredContent: cart,
+  };
 };
 
 /**
@@ -323,7 +346,7 @@ export const getActiveCart: ToolImplementation = async (client, args) => {
   const result = await client.cart.getActive(site_id);
   const c = result as any;
   if (!c || !c.cart_id) {
-    return JSON.stringify({ cart: null, message: 'No active cart found for this site.' });
+    return textResult('No active cart found for this store yet — add an item with add_to_cart to start one.');
   }
   const cartModel = buildCartCard(c, site_id);
   return cardResult(await inlineCardImages(cartModel));
@@ -559,22 +582,25 @@ export const checkDelegation: ToolImplementation = async (client, args, config) 
     },
   );
   const data = await res.json() as Record<string, unknown>;
-  if (!res.ok) throw new Error(JSON.stringify(data));
-
-  if (data.status === 'approved' && data.ait) {
-    return JSON.stringify({
-      status: 'approved',
-      delegation_token: data.ait,
-      message: 'Human has approved. Use this delegation_token as buyer_delegation_token in execute_checkout.',
-    });
+  if (!res.ok) {
+    const msg = (data as any)?.error?.message ?? (data as any)?.message ?? `Could not check delegation status (HTTP ${res.status}).`;
+    throw new Error(String(msg));
   }
 
-  return JSON.stringify({
-    status: data.status,
-    message: data.status === 'pending'
-      ? 'Human has not approved yet. Poll again in a few seconds.'
-      : `Delegation status: ${data.status}`,
-  });
+  if (data.status === 'approved' && data.ait) {
+    return {
+      content: [{ type: 'text', text: 'Approved ✓ — the buyer authorized this. Proceeding to checkout/payment.' }],
+      structuredContent: { status: 'approved', delegation_token: data.ait },
+    };
+  }
+
+  const msg = data.status === 'pending'
+    ? 'Not approved yet — waiting on the buyer. Poll again in a few seconds.'
+    : `Delegation status: ${data.status}.`;
+  return {
+    content: [{ type: 'text', text: msg }],
+    structuredContent: { status: data.status },
+  };
 };
 
 /**
@@ -592,7 +618,26 @@ export const getProductReviews: ToolImplementation = async (client, args) => {
     page: page as number,
   });
 
-  return JSON.stringify(reviews, null, 2);
+  const r = reviews as any;
+  const cons = r?.authenticity_consensus ?? {};
+  const list = (r?.reviews ?? r?.data ?? []) as Array<any>;
+  const lines: string[] = ['**Reviews & authenticity**', ''];
+  if (cons.average_rating != null) lines.push(`Average rating: ${cons.average_rating}★`);
+  if (cons.trust_score != null) lines.push(`Trust score: ${Math.round(Number(cons.trust_score) * 100)}%`);
+  if (cons.verified_percentage != null) lines.push(`Verified purchases: ${cons.verified_percentage}%`);
+  if (Array.isArray(cons.flags) && cons.flags.length > 0) lines.push(`⚠ Flags: ${cons.flags.join(', ')}`);
+  if (list.length > 0) {
+    lines.push('', '**Recent reviews:**');
+    for (const rv of list.slice(0, 5)) {
+      const rating = rv.rating != null ? `${rv.rating}★ ` : '';
+      const verified = rv.verified_purchase ? ' _(verified)_' : '';
+      const body = String(rv.body ?? rv.text ?? rv.comment ?? '').slice(0, 160);
+      lines.push(`- ${rating}${body}${verified}`);
+    }
+  } else {
+    lines.push('', '_No reviews yet._');
+  }
+  return { content: [{ type: 'text', text: lines.join('\n') }], structuredContent: reviews };
 };
 
 /**
@@ -611,7 +656,12 @@ export const requestBackInStock: ToolImplementation = async (client, args) => {
     ...(product_title ? { product_title: product_title as string } : {}),
   });
 
-  return JSON.stringify(result);
+  const r = result as any;
+  const name = (product_title as string) || 'this item';
+  const text = r?.will_email
+    ? `Done — we'll email you when ${name} is back in stock.`
+    : (r?.message ?? `Noted: your interest in ${name} was recorded. Add an email to get a restock alert.`);
+  return { content: [{ type: 'text', text: String(text) }], structuredContent: result };
 };
 
 /** Tool: Set the cart's shipping destination and return available rates */
