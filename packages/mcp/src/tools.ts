@@ -284,8 +284,16 @@ export const applyCoupon: ToolImplementation = async (client, args) => {
     throw new Error('site_id, cart_id, and code are required');
   }
 
-  const updatedCart = await client.cart.applyCoupon(site_id as string, cart_id as string, code as string);
-  return JSON.stringify(updatedCart);
+  let updatedCart;
+  try {
+    updatedCart = await client.cart.applyCoupon(site_id as string, cart_id as string, code as string);
+  } catch (err) {
+    // Surface a human-readable message (the View shows it as a toast), not raw JSON.
+    const msg = (err as any)?.error?.message ?? (err instanceof Error ? err.message : String(err));
+    throw new Error(String(msg));
+  }
+  const cartModel = buildCartCard(updatedCart as any, site_id as string);
+  return cardResult(await inlineCardImages(cartModel));
 };
 
 /**

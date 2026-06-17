@@ -153,11 +153,15 @@ function buildVariants(raw: any): ProductCardVariant[] | undefined {
 }
 
 export function buildCartCard(cart: any, siteId: string): CartCardModel {
+  const discounts = (cart.discounts ?? [])
+    .map((d: any) => ({ code: String(d.code ?? ''), amount: money(d.amount) }))
+    .filter((d: { code: string; amount: string }) => d.code !== '');
   return {
     kind: 'cart',
     siteId,
     cartId: cart.cart_id,
     items: lines(cart, siteId),
+    ...(discounts.length > 0 ? { discounts } : {}),
     subtotal: money(cart.subtotal),
     total: money(cart.total),
   };

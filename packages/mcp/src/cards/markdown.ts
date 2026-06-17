@@ -84,11 +84,13 @@ function cartLines(items: CartCardModel['items']): string[] {
 }
 
 function cart(m: CartCardModel): string {
+  const discountLines = (m.discounts ?? []).map((d) => `Discount (${d.code}): −${d.amount}`);
   return [
     `**Cart** \`${m.cartId}\``,
     '',
     ...cartLines(m.items),
     '',
+    ...discountLines,
     `Subtotal: ${m.subtotal}  \n**Total: ${m.total}**`,
   ].join('\n');
 }

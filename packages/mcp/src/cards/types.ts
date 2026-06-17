@@ -87,6 +87,7 @@ export interface CartCardModel {
   siteId: string;
   cartId: string;
   items: CartLine[];
+  discounts?: { code: string; amount: string }[];
   subtotal: string;
   total: string;
 }

@@ -57,6 +57,23 @@ describe('card model builders', () => {
     expect(m.kind).toBe('delegation');
     expect(m).toMatchObject({ deviceCode: 'd1', userCode: 'WXYZ', siteName: 'My Store', otpEntry: true });
   });
+
+  it('buildCartCard maps discounts to formatted lines', () => {
+    const m = buildCartCard({
+      cart_id: 'c1',
+      items: [],
+      discounts: [{ code: 'XMAS10', amount: { amount: '50.00', currency: 'GHS' } }],
+      subtotal: { amount: '578.00', currency: 'GHS' },
+      total: { amount: '528.00', currency: 'GHS' },
+    } as any, 's1');
+    expect(m.discounts).toEqual([{ code: 'XMAS10', amount: 'GHS 50.00' }]);
+    expect(m.total).toBe('GHS 528.00');
+  });
+
+  it('buildCartCard omits discounts when none', () => {
+    const m = buildCartCard({ cart_id: 'c1', items: [], subtotal: { amount: '10.00', currency: 'USD' }, total: { amount: '10.00', currency: 'USD' } } as any, 's1');
+    expect(m.discounts).toBeUndefined();
+  });
 });
 
 describe('buildProductListCard', () => {
