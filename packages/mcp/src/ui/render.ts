@@ -1313,9 +1313,39 @@ function renderCartStep(
   const subRow = el('div', 'syn-review-row');
   subRow.append(el('span', 'k', 'Subtotal'), el('span', 'v', model.subtotal));
   summary.appendChild(subRow);
+  for (const d of model.discounts ?? []) {
+    const dRow = el('div', 'syn-review-row');
+    dRow.append(el('span', 'k', `Discount (${d.code})`), el('span', 'v', `−${d.amount}`));
+    summary.appendChild(dRow);
+  }
   const totRow = el('div', 'syn-review-row syn-review-total');
   totRow.append(el('span', 'k', 'Total'), el('span', 'v', model.total));
   summary.appendChild(totRow);
+  // Coupon entry (apply-only). Errors surface as a toast; success re-renders the cart.
+  const couponRow = el('div', 'syn-review-row');
+  couponRow.style.gap = '8px';
+  const couponInput = el('input', 'syn-input') as HTMLInputElement;
+  couponInput.placeholder = 'Coupon code';
+  couponInput.style.flex = '1';
+  const applyBtn = el('button', 'syn-btn syn-btn-ghost syn-btn-sm', 'Apply') as HTMLButtonElement;
+  applyBtn.type = 'button';
+  applyBtn.onclick = async () => {
+    const code = couponInput.value.trim();
+    if (!code) return;
+    applyBtn.disabled = true;
+    applyBtn.textContent = 'Applying…';
+    try {
+      const res = await ctx.callTool('apply_coupon', { site_id: model.siteId, cart_id: model.cartId, code });
+      if (res.isError) throw new Error(textOf(res) || 'Could not apply that coupon.');
+      ctx.onResult?.(res);
+    } catch (err) {
+      applyBtn.disabled = false;
+      applyBtn.textContent = 'Apply';
+      showButtonError(applyBtn, err);
+    }
+  };
+  couponRow.append(couponInput, applyBtn);
+  summary.appendChild(couponRow);
   stack.appendChild(summary);
 
   // Items card: one row per line — thumbnail · title + In stock · price · stepper + trash.
