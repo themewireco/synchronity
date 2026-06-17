@@ -50,7 +50,7 @@ export type ToolImplementation = (
  * Tool: Search products on a site
  */
 export const searchProducts: ToolImplementation = async (client, args) => {
-  const { site_id, query, category, min_price, max_price, in_stock, page = 1, per_page = 20 } = args;
+  const { site_id, query, queries, category, min_price, max_price, in_stock, page = 1, per_page = 20 } = args;
 
   // query is OPTIONAL: omit it to browse the store's full catalog. Only site_id
   // is required. Passing an empty/whitespace query is treated as a browse.
@@ -58,23 +58,65 @@ export const searchProducts: ToolImplementation = async (client, args) => {
     throw new Error('site_id is required');
   }
 
-  const trimmedQuery = typeof query === 'string' ? query.trim() : '';
-
-  const results = await client.products.search(site_id as string, {
-    q: trimmedQuery ? trimmedQuery : undefined,
+  const filters = {
     category: category as string | undefined,
     min_price: min_price as number | undefined,
     max_price: max_price as number | undefined,
     in_stock: in_stock as boolean | undefined,
     page: page as number,
     limit: per_page as number,
-  });
+  };
 
   // @synchronity/sdk's products.search() returns { products, total, page, total_pages };
   // keep `data` as a defensive fallback for the raw paginated API shape.
-  const r = results as { products?: Array<unknown>; data?: Array<unknown> };
-  const products = r.products ?? r.data ?? [];
-  const listModel = buildProductListCard(products as any[], site_id as string, siteNameFor(site_id as string));
+  const extractProducts = (results: unknown): any[] => {
+    const r = results as { products?: Array<unknown>; data?: Array<unknown> };
+    return (r.products ?? r.data ?? []) as any[];
+  };
+
+  // BATCH: several product names in one call. Search per query, flatten + dedupe
+  // by product_id, and summarise per-query matches in the card text.
+  const queryList = Array.isArray(queries)
+    ? (queries as string[]).map((q) => String(q).trim()).filter(Boolean)
+    : [];
+  if (queryList.length > 0) {
+    const seen = new Set<string>();
+    const merged: any[] = [];
+    const summary: string[] = [];
+    for (const q of queryList) {
+      let found: any[] = [];
+      try {
+        found = extractProducts(await client.products.search(site_id as string, { q, ...filters }));
+      } catch (err) {
+        summary.push(`"${q}": search failed${err instanceof Error ? ` (${err.message})` : ''}`);
+        continue;
+      }
+      if (found.length === 0) {
+        summary.push(`"${q}": no match`);
+        continue;
+      }
+      summary.push(`"${q}": ${found.length} match${found.length === 1 ? '' : 'es'}`);
+      for (const p of found) {
+        const id = String(p.product_id ?? p.id ?? '');
+        if (id && seen.has(id)) continue;
+        if (id) seen.add(id);
+        merged.push(p);
+      }
+    }
+    const listModel = buildProductListCard(merged, site_id as string, siteNameFor(site_id as string));
+    const card = cardResult(await inlineCardImages(listModel));
+    const note = `Search matches — ${summary.join('; ')}.`;
+    card.content = [{ type: 'text', text: `${(card.content?.[0] as any)?.text ?? ''}\n\n_${note}_` }];
+    return card;
+  }
+
+  // SINGLE / BROWSE: unchanged behavior.
+  const trimmedQuery = typeof query === 'string' ? query.trim() : '';
+  const results = await client.products.search(site_id as string, {
+    q: trimmedQuery ? trimmedQuery : undefined,
+    ...filters,
+  });
+  const listModel = buildProductListCard(extractProducts(results), site_id as string, siteNameFor(site_id as string));
   return cardResult(await inlineCardImages(listModel));
 };
 

@@ -46,7 +46,12 @@ const TOOL_DEFINITIONS: Tool[] = [
       type: 'object',
       properties: {
         site_id: { type: 'string', description: 'Registered site ID (e.g., "site_abc123" or "shopify_store_1")' },
-        query: { type: 'string', description: 'Optional search term (product name/keyword). OMIT to browse the store\'s full catalog.' },
+        query: { type: 'string', description: 'Optional single search term (product name/keyword). OMIT to browse; for several names use `queries`.' },
+        queries: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Search several product names at once (e.g. when the buyer lists multiple items). Returns all matches in ONE call/card instead of searching one at a time. Use `query` for a single search, `queries` for several, or omit both to browse.',
+        },
         category: { type: 'string', description: 'Filter by product category (optional)' },
         min_price: {
           type: 'string',
