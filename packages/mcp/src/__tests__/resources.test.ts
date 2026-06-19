@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { listUiResources, readUiResource, RESOURCE_MIME_TYPE, OPENAI_MIME_TYPE } from '../cards/resources.js';
+import { listUiResources, listUiResourceTemplates, readUiResource, RESOURCE_MIME_TYPE, OPENAI_MIME_TYPE } from '../cards/resources.js';
 
 describe('MCP Apps UI resources', () => {
   it('lists the two product Views with the mcp-app mime + _meta.ui CSP', () => {
@@ -40,6 +40,25 @@ describe('UI resources carry ChatGPT widget polish meta', () => {
       expect(r._meta?.['openai/widgetDescription'], `${r.uri}`).toBeTruthy();
       expect(r._meta?.['openai/toolInvocation/invoking'], `${r.uri}`).toBeTruthy();
       expect(r._meta?.['openai/toolInvocation/invoked'], `${r.uri}`).toBeTruthy();
+    }
+  });
+});
+
+describe('resources/templates/list exposes the Views (ChatGPT discovery probe)', () => {
+  it('lists every View as a resource template with uriTemplate', () => {
+    const tpls = listUiResourceTemplates() as any[];
+    const uris = tpls.map((t) => t.uriTemplate).sort();
+    expect(uris).toEqual(['ui://synchronity/cart', 'ui://synchronity/multi-cart', 'ui://synchronity/product', 'ui://synchronity/product-list']);
+    for (const t of tpls) {
+      expect(t.uriTemplate).toBeTruthy();
+      expect((t as any).uri).toBeUndefined();
+    }
+  });
+
+  it('serves skybridge mime + widgetAccessible to ChatGPT templates', () => {
+    for (const t of listUiResourceTemplates({ openai: true }) as any[]) {
+      expect(t.mimeType).toBe(OPENAI_MIME_TYPE);
+      expect(t._meta['openai/widgetAccessible']).toBe(true);
     }
   });
 });

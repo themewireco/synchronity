@@ -11,6 +11,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
   ListResourcesRequestSchema,
+  ListResourceTemplatesRequestSchema,
   ReadResourceRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
@@ -20,7 +21,7 @@ import { getToolImplementation } from './tools.js';
 import { COUNTRY_CODES } from './countries.js';
 import type { MCPContent } from './types.js';
 import type { CardToolResult } from './cards/types.js';
-import { listUiResources, readUiResource } from './cards/resources.js';
+import { listUiResources, listUiResourceTemplates, readUiResource } from './cards/resources.js';
 import { TOOL_OUTPUT_SCHEMAS } from './cards/outputSchemas.js';
 
 // The schema module types its values as plain JSON-schema records; the MCP Tool
@@ -741,6 +742,13 @@ export function createMCPServer(config: {
   // Apps fetch these and render the interactive card; others use the Markdown text.
   server.setRequestHandler(ListResourcesRequestSchema, () => ({
     resources: listUiResources(resourceOpts),
+  }));
+
+  // ChatGPT's widget discovery probes resources/templates/list; without this
+  // handler the low-level server returns -32601, which can abort outputTemplate
+  // registration so the View never mounts. Expose the Views as templates too.
+  server.setRequestHandler(ListResourceTemplatesRequestSchema, () => ({
+    resourceTemplates: listUiResourceTemplates(resourceOpts),
   }));
 
   server.setRequestHandler(ReadResourceRequestSchema, (request) => {

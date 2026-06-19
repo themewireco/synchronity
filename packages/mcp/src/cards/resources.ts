@@ -158,6 +158,19 @@ const OPENAI_WIDGET_CSP = {
   resource_domains: UI_META.csp.resourceDomains,
 };
 
+/** Shared `_meta` for a resource descriptor (list + templates). */
+function resourceMeta(r: UiResourceDef, opts?: ResourceServeOpts) {
+  return {
+    ui: UI_META,
+    'openai/widgetDescription': r.widgetDescription,
+    'openai/toolInvocation/invoking': r.invoking,
+    'openai/toolInvocation/invoked': r.invoked,
+    ...(opts?.openai
+      ? { 'openai/widgetCSP': OPENAI_WIDGET_CSP, 'openai/widgetAccessible': true }
+      : {}),
+  };
+}
+
 /** Resource descriptors for `resources/list`. */
 export function listUiResources(opts?: ResourceServeOpts) {
   return RESOURCES.map((r) => ({
@@ -165,15 +178,25 @@ export function listUiResources(opts?: ResourceServeOpts) {
     name: r.name,
     description: r.description,
     mimeType: mimeFor(opts),
-    _meta: {
-      ui: UI_META,
-      'openai/widgetDescription': r.widgetDescription,
-      'openai/toolInvocation/invoking': r.invoking,
-      'openai/toolInvocation/invoked': r.invoked,
-      ...(opts?.openai
-        ? { 'openai/widgetCSP': OPENAI_WIDGET_CSP, 'openai/widgetAccessible': true }
-        : {}),
-    },
+    _meta: resourceMeta(r, opts),
+  }));
+}
+
+/**
+ * Resource-TEMPLATE descriptors for `resources/templates/list`. ChatGPT's widget
+ * discovery probes this method; a low-level MCP server that only handles
+ * `resources/list` returns JSON-RPC -32601 (method not found) here, which can
+ * abort ChatGPT's outputTemplate registration (so the View never mounts). We
+ * expose the same `ui://` Views as (non-parameterised) templates so the probe
+ * succeeds and finds them. `uriTemplate` is the literal URI (no RFC-6570 vars).
+ */
+export function listUiResourceTemplates(opts?: ResourceServeOpts) {
+  return RESOURCES.map((r) => ({
+    uriTemplate: r.uri,
+    name: r.name,
+    description: r.description,
+    mimeType: mimeFor(opts),
+    _meta: resourceMeta(r, opts),
   }));
 }
 
