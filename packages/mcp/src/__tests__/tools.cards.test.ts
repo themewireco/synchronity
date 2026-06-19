@@ -65,6 +65,17 @@ describe('searchProducts returns an MCP Apps product list', () => {
     await searchProducts(browseClient, { site_id: 's1', query: '   ' }, {} as any);
     expect(search).toHaveBeenCalledWith('s1', expect.objectContaining({ q: undefined }));
   });
+
+  it('budget: drops out-of-budget items from the card even if the connector ignores max_price', async () => {
+    const inBudget = { ...product, product_id: 'cheap', title: 'Cheap Tee', price: { amount: '26.00', currency: 'USD' } };
+    const overBudget = { ...product, product_id: 'pricey', title: 'Pricey Box', price: { amount: '580.00', currency: 'USD' } };
+    // Connector returns BOTH (ignores the price filter); the handler must still drop the over-budget one.
+    const client = { products: { search: async () => ({ products: [inBudget, overBudget] }) } } as any;
+    const out: any = await searchProducts(client, { site_id: 's1', max_price: 150 }, {} as any);
+    const ids = out.structuredContent.products.map((p: any) => p.productId);
+    expect(ids).toContain('cheap');
+    expect(ids).not.toContain('pricey');
+  });
 });
 
 describe('request_delegation returns a Markdown delegation card', () => {

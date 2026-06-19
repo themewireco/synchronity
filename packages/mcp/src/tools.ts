@@ -46,6 +46,44 @@ export type ToolImplementation = (
   server?: Server
 ) => Promise<string | MCPContent[] | ToolResult>;
 
+/** Lowest / highest variant price for a product (falls back to the base price). */
+function productPriceBounds(p: any): { min: number; max: number } {
+  const variants = Array.isArray(p?.variants) && p.variants.length ? p.variants : [p];
+  const amounts = variants
+    .map((v: any) => parseFloat(v?.price?.amount ?? p?.price?.amount ?? 'NaN'))
+    .filter((n: number) => Number.isFinite(n));
+  if (amounts.length === 0) {
+    const base = parseFloat(p?.price?.amount ?? 'NaN');
+    return { min: base, max: base };
+  }
+  return { min: Math.min(...amounts), max: Math.max(...amounts) };
+}
+
+/**
+ * Defense-in-depth budget / stock filter applied to products BEFORE rendering
+ * the card. A connector that ignores price params (or a model that under-passes
+ * them) can never cause out-of-budget items to render. Mirrors the
+ * gateway/connector filter semantics: in-budget if any variant price is within
+ * [min, max].
+ */
+function filterProductsForCard(
+  products: any[],
+  raw: { min_price?: unknown; max_price?: unknown; in_stock?: unknown }
+): any[] {
+  const min = raw.min_price != null && Number.isFinite(Number(raw.min_price)) ? Number(raw.min_price) : undefined;
+  const max = raw.max_price != null && Number.isFinite(Number(raw.max_price)) ? Number(raw.max_price) : undefined;
+  const inStock = raw.in_stock === true || raw.in_stock === 'true';
+  if (min === undefined && max === undefined && !inStock) return products;
+  return products.filter((p) => {
+    if (inStock && p?.availability && p.availability !== 'in_stock') return false;
+    if (min === undefined && max === undefined) return true;
+    const { min: lo, max: hi } = productPriceBounds(p);
+    if (max !== undefined && lo > max) return false;
+    if (min !== undefined && hi < min) return false;
+    return true;
+  });
+}
+
 /**
  * Tool: Search products on a site
  */
@@ -103,7 +141,8 @@ export const searchProducts: ToolImplementation = async (client, args) => {
         merged.push(p);
       }
     }
-    const listModel = buildProductListCard(merged, site_id as string, siteNameFor(site_id as string));
+    const filteredMerged = filterProductsForCard(merged, { min_price, max_price, in_stock });
+    const listModel = buildProductListCard(filteredMerged, site_id as string, siteNameFor(site_id as string));
     const card = cardResult(await inlineCardImages(listModel));
     const note = `Search matches — ${summary.join('; ')}.`;
     card.content = [{ type: 'text', text: `${(card.content?.[0] as any)?.text ?? ''}\n\n_${note}_` }];
@@ -116,7 +155,8 @@ export const searchProducts: ToolImplementation = async (client, args) => {
     q: trimmedQuery ? trimmedQuery : undefined,
     ...filters,
   });
-  const listModel = buildProductListCard(extractProducts(results), site_id as string, siteNameFor(site_id as string));
+  const filtered = filterProductsForCard(extractProducts(results), { min_price, max_price, in_stock });
+  const listModel = buildProductListCard(filtered, site_id as string, siteNameFor(site_id as string));
   return cardResult(await inlineCardImages(listModel));
 };
 
