@@ -21,15 +21,22 @@ import { COUNTRY_CODES } from './countries.js';
 import type { MCPContent } from './types.js';
 import type { CardToolResult } from './cards/types.js';
 import { listUiResources, readUiResource } from './cards/resources.js';
+import { TOOL_OUTPUT_SCHEMAS } from './cards/outputSchemas.js';
+
+// The schema module types its values as plain JSON-schema records; the MCP Tool
+// type wants `outputSchema?: { type: 'object'; ... }`. Re-type the map once here
+// so each descriptor below can reference it without a per-tool cast.
+const OUTPUT_SCHEMAS = TOOL_OUTPUT_SCHEMAS as Record<string, Tool['outputSchema']>;
 
 /**
  * Tool definitions as per MCP spec
  */
-const TOOL_DEFINITIONS: Tool[] = [
+export const TOOL_DEFINITIONS: Tool[] = [
   {
     name: 'list_sites',
     annotations: { title: 'List connected stores', readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     description: 'List all registered e-commerce sites. Use this first to find a site by name (e.g. "Pronto Partners") and get its site_id, which is required by all other tools.',
+    outputSchema: OUTPUT_SCHEMAS['list_sites'],
     inputSchema: {
       type: 'object',
       properties: {},
@@ -39,7 +46,11 @@ const TOOL_DEFINITIONS: Tool[] = [
   {
     name: 'search_products',
     annotations: { title: 'Search products', readOnlyHint: true, destructiveHint: false, openWorldHint: true },
-    _meta: { ui: { resourceUri: 'ui://synchronity/product-list' } },
+    _meta: {
+      ui: { resourceUri: 'ui://synchronity/product-list' },
+      'openai/outputTemplate': 'ui://synchronity/product-list',
+    },
+    outputSchema: OUTPUT_SCHEMAS['search_products'],
     description:
       'Find products on a registered store. To BROWSE a store\'s catalog (open-ended requests like "what do they sell", "show me what\'s available"), call with NO query — this returns the store\'s products. To SEARCH, pass `query` (a product name/keyword). Returns paginated products as an interactive card. ALWAYS translate a buyer\'s budget or price constraint into the price params on THIS call instead of filtering in your reply: "under/below/within X" or "X budget" → `max_price: X`; "over/above/at least X" → `min_price: X`; "between X and Y" → both. Likewise pass `in_stock: true` for "available"/"in stock" and `category` when they name one. The card renders exactly what this call returns, so the filter MUST be applied here — never fetch the full catalog and then narrow it in text. Call once with your best intent (browse OR a single query); if a real search is genuinely empty, ask the user to clarify rather than re-firing reworded queries. The card shows products, prices, IDs, and Add-to-cart controls — keep your text reply to one brief sentence and do not re-list what the card shows.',
     inputSchema: {
@@ -76,7 +87,11 @@ const TOOL_DEFINITIONS: Tool[] = [
   {
     name: 'get_product',
     annotations: { title: 'Get product details', readOnlyHint: true, destructiveHint: false, openWorldHint: true },
-    _meta: { ui: { resourceUri: 'ui://synchronity/product' } },
+    _meta: {
+      ui: { resourceUri: 'ui://synchronity/product' },
+      'openai/outputTemplate': 'ui://synchronity/product',
+    },
+    outputSchema: OUTPUT_SCHEMAS['get_product'],
     description: 'Retrieve detailed information about a specific product including variants, pricing, images, and availability. May also return `addons` — customer-selectable options defined by the store (e.g. engraving, gift wrap, size add-ons). When a product has addons, present them to the buyer and collect every addon with `required: true` before calling add_to_cart; for any option carrying a `price_modifier`, show that surcharge so the buyer knows the added cost. The card already shows the product details to the user, so keep your text reply brief and do not re-describe what the card displays.',
     inputSchema: {
       type: 'object',
@@ -90,6 +105,7 @@ const TOOL_DEFINITIONS: Tool[] = [
   {
     name: 'get_product_reviews',
     annotations: { title: 'Get product reviews', readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    outputSchema: OUTPUT_SCHEMAS['get_product_reviews'],
     description:
       '🔍 **RECOMMENDED STEP** — Fetch product reviews and authenticity consensus before making purchase decisions. Returns: average rating, trust score (0.0-1.0), review sentiment analysis, authenticity flags (fake reviews, seller issues, negative trends), and recent reviews with verified purchase status. Always call this for each product before adding to cart to verify quality and detect scams.',
     inputSchema: {
@@ -106,6 +122,7 @@ const TOOL_DEFINITIONS: Tool[] = [
   {
     name: 'request_back_in_stock',
     annotations: { title: 'Notify me when back in stock', readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+    outputSchema: OUTPUT_SCHEMAS['request_back_in_stock'],
     description:
       'Subscribe the buyer to a back-in-stock alert for an out-of-stock product. Use when the buyer asks to be notified/told/pinged when an item restocks ("notify me when X is back", "let me know when it\'s in stock"). Collect the buyer\'s email so the alert can reach them (without it only the demand is recorded for the merchant). The buyer is emailed when the product is next seen in stock. Returns whether an email alert was armed.',
     inputSchema: {
@@ -123,6 +140,7 @@ const TOOL_DEFINITIONS: Tool[] = [
   {
     name: 'compare_products',
     annotations: { title: 'Compare products across stores', readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    outputSchema: OUTPUT_SCHEMAS['compare_products'],
     description:
       'Compare products across multiple registered e-commerce sites simultaneously. Uses fail-open strategy: partial results from successful sites are returned even if some sites time out.',
     inputSchema: {
@@ -141,6 +159,7 @@ const TOOL_DEFINITIONS: Tool[] = [
   {
     name: 'create_cart',
     annotations: { title: 'Create cart', readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+    outputSchema: OUTPUT_SCHEMAS['create_cart'],
     description:
       'Create a new shopping cart for a specific site. Returns a cart_id. IMPORTANT: Reuse the active cart_id across multiple products in the same session. Do NOT call create_cart again if you already have a cart_id for this site in the chat history.',
     inputSchema: {
@@ -155,7 +174,11 @@ const TOOL_DEFINITIONS: Tool[] = [
   {
     name: 'add_to_cart',
     annotations: { title: 'Add item to cart', readOnlyHint: false, destructiveHint: false, openWorldHint: true },
-    _meta: { ui: { resourceUri: 'ui://synchronity/cart' } },
+    _meta: {
+      ui: { resourceUri: 'ui://synchronity/cart' },
+      'openai/outputTemplate': 'ui://synchronity/cart',
+    },
+    outputSchema: OUTPUT_SCHEMAS['add_to_cart'],
     description: 'Add a product variant (or base product) to an existing cart. Reuse the active cart_id from the chat history if one already exists. Only call create_cart first if no cart exists yet.',
     inputSchema: {
       type: 'object',
@@ -193,6 +216,7 @@ const TOOL_DEFINITIONS: Tool[] = [
   {
     name: 'quick_checkout',
     annotations: { title: 'Quick checkout (build carts)', readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+    outputSchema: OUTPUT_SCHEMAS['quick_checkout'],
     description:
       'Assemble checkout-ready cart(s) in ONE call for a multi-product (and optionally multi-store) request. Creates a cart per store, adds all items, and sets the shipping address — then returns the cart(s) with delivery options to choose. Use this when the buyer lists several products at once (optionally across stores) and/or gives their address up front, instead of calling create_cart/add_to_cart/set_shipping_address separately. Does NOT select delivery, check out, or pay — the buyer picks delivery (select_shipping_option) and approves checkout/payment per store afterward. Out-of-stock items are reported; pass customer.email to auto-arm a back-in-stock alert for them.',
     inputSchema: {
@@ -236,7 +260,11 @@ const TOOL_DEFINITIONS: Tool[] = [
   {
     name: 'remove_from_cart',
     annotations: { title: 'Remove item from cart', readOnlyHint: false, destructiveHint: true, openWorldHint: true },
-    _meta: { ui: { resourceUri: 'ui://synchronity/cart' } },
+    _meta: {
+      ui: { resourceUri: 'ui://synchronity/cart' },
+      'openai/outputTemplate': 'ui://synchronity/cart',
+    },
+    outputSchema: OUTPUT_SCHEMAS['remove_from_cart'],
     description: 'Remove a line item from the cart. Requires the item_id from the cart contents.',
     inputSchema: {
       type: 'object',
@@ -251,7 +279,11 @@ const TOOL_DEFINITIONS: Tool[] = [
   {
     name: 'set_cart_quantity',
     annotations: { title: 'Set item quantity', readOnlyHint: false, destructiveHint: true, openWorldHint: true },
-    _meta: { ui: { resourceUri: 'ui://synchronity/cart' } },
+    _meta: {
+      ui: { resourceUri: 'ui://synchronity/cart' },
+      'openai/outputTemplate': 'ui://synchronity/cart',
+    },
+    outputSchema: OUTPUT_SCHEMAS['set_cart_quantity'],
     description: "Set a cart line's quantity (the server cart is the checkout source of truth, so this updates it live). Requires the item_id from the cart contents and the new absolute quantity. A quantity of 0 removes the line. Returns the updated cart card.",
     inputSchema: {
       type: 'object',
@@ -267,6 +299,11 @@ const TOOL_DEFINITIONS: Tool[] = [
   {
     name: 'apply_coupon',
     annotations: { title: 'Apply coupon', readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+    _meta: {
+      ui: { resourceUri: 'ui://synchronity/cart' },
+      'openai/outputTemplate': 'ui://synchronity/cart',
+    },
+    outputSchema: OUTPUT_SCHEMAS['apply_coupon'],
     description: 'Apply a discount or promotional code to the cart. Returns the updated cart with discount applied.',
     inputSchema: {
       type: 'object',
@@ -281,7 +318,11 @@ const TOOL_DEFINITIONS: Tool[] = [
   {
     name: 'get_cart',
     annotations: { title: 'View cart', readOnlyHint: true, destructiveHint: false, openWorldHint: true },
-    _meta: { ui: { resourceUri: 'ui://synchronity/cart' } },
+    _meta: {
+      ui: { resourceUri: 'ui://synchronity/cart' },
+      'openai/outputTemplate': 'ui://synchronity/cart',
+    },
+    outputSchema: OUTPUT_SCHEMAS['get_cart'],
     description: 'Retrieve current cart contents, including items, pricing, discounts, and totals. The card already shows the line items and totals to the user, so keep your text reply to one brief sentence — do not re-list the cart contents.',
     inputSchema: {
       type: 'object',
@@ -295,7 +336,11 @@ const TOOL_DEFINITIONS: Tool[] = [
   {
     name: 'get_active_cart',
     annotations: { title: 'Resume active cart', readOnlyHint: true, destructiveHint: false, openWorldHint: true },
-    _meta: { ui: { resourceUri: 'ui://synchronity/cart' } },
+    _meta: {
+      ui: { resourceUri: 'ui://synchronity/cart' },
+      'openai/outputTemplate': 'ui://synchronity/cart',
+    },
+    outputSchema: OUTPUT_SCHEMAS['get_active_cart'],
     description: "Retrieve the buyer's in-progress cart for a site (resumes a conversation). Call this before assuming a new cart when a shopping conversation continues or after a cart error. Returns the cart with its items rebuilt if the connector cart expired, or null if no cart exists.",
     inputSchema: {
       type: 'object',
@@ -308,6 +353,7 @@ const TOOL_DEFINITIONS: Tool[] = [
   {
     name: 'set_shipping_address',
     annotations: { title: 'Set shipping address', readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+    outputSchema: OUTPUT_SCHEMAS['set_shipping_address'],
     description: 'Set the cart shipping destination (collected from the buyer) and return available shipping options with costs. Call after items are in the cart and before select_shipping_option. country_code is required; include postal_code/state for accurate rates.',
     inputSchema: {
       type: 'object',
@@ -325,6 +371,7 @@ const TOOL_DEFINITIONS: Tool[] = [
   {
     name: 'select_shipping_option',
     annotations: { title: 'Select shipping option', readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+    outputSchema: OUTPUT_SCHEMAS['select_shipping_option'],
     description: 'Select one of the shipping options returned by set_shipping_address. Binds the rate to the cart so the total includes shipping; call before execute_checkout so the hosted checkout opens pre-filled.',
     inputSchema: {
       type: 'object',
@@ -339,6 +386,7 @@ const TOOL_DEFINITIONS: Tool[] = [
   {
     name: 'execute_checkout',
     annotations: { title: 'Place order (checkout)', readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+    outputSchema: OUTPUT_SCHEMAS['execute_checkout'],
     description:
       'Execute checkout for a cart to create an order. Requires a buyer delegation token (from user auth) and a shipping address. The order is created UNPAID (status "pending"). IMPORTANT — do NOT stop here or just hand the user the payment_url. Immediately continue the in-chat payment flow: call get_payment_methods for the returned order_id, present the available channels to the buyer, and ask which they want to use; then drive initiate_payment → (submit_payment_otp if needed) → poll get_payment_status until the order is paid. The payment_url in the response is only a manual fallback if the buyer declines in-chat payment. Always offer to collect payment in the chat first.',
     inputSchema: {
@@ -379,6 +427,7 @@ const TOOL_DEFINITIONS: Tool[] = [
   {
     name: 'get_order',
     annotations: { title: 'Get order details', readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    outputSchema: OUTPUT_SCHEMAS['get_order'],
     description: 'Retrieve details for an order by its ID, including items, status, shipping, and tracking information. Orders are buyer-private — pass `buyer_delegation_token` (the delegation token from this buyer\'s checkout approval) so the gateway can confirm the buyer owns this order. If checking if an order is paid: a status of \'pending\' or \'pending_payment\' means the order has NOT been paid. Do NOT assume that the vendor storefront has synchronization delays or database lag; treat \'pending\' as unpaid. When an order is unpaid, offer to collect payment in the chat by starting the in-chat payment flow (get_payment_methods → initiate_payment → get_payment_status) rather than only pointing the user at the payment_url. Do not mark the purchase task as successful until the status updates to \'processing\' or \'completed\'.',
     inputSchema: {
       type: 'object',
@@ -393,6 +442,7 @@ const TOOL_DEFINITIONS: Tool[] = [
   {
     name: 'list_orders',
     annotations: { title: 'List orders', readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    outputSchema: OUTPUT_SCHEMAS['list_orders'],
     description: 'List recent orders for a site, optionally filtered by status (pending, processing, completed, cancelled, refunded). Orders are buyer-private — pass `buyer_delegation_token` (from this buyer\'s checkout approval); only that buyer\'s orders are returned.',
     inputSchema: {
       type: 'object',
@@ -413,6 +463,7 @@ const TOOL_DEFINITIONS: Tool[] = [
   {
     name: 'request_delegation',
     annotations: { title: 'Request buyer approval', readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+    outputSchema: OUTPUT_SCHEMAS['request_delegation'],
     description: 'Start the human delegation (approval) flow needed for checkout/payment. PREFERRED: pass the buyer\'s `email` — the gateway emails them a 6-digit code and returns a device_code; ask the user for the code and call submit_delegation_otp. This keeps approval fully in-chat (no link) and you never see the code, so you cannot approve on their behalf. If you omit `email`, it falls back to a browser approval link (device flow) which the user must open; then poll check_delegation. You can never approve a delegation yourself.',
     inputSchema: {
       type: 'object',
@@ -432,6 +483,7 @@ const TOOL_DEFINITIONS: Tool[] = [
   {
     name: 'submit_delegation_otp',
     annotations: { title: 'Submit approval code', readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+    outputSchema: OUTPUT_SCHEMAS['submit_delegation_otp'],
     description: 'Submit the 6-digit code the buyer received by email (from request_delegation with an email) to approve the delegation in-chat. On success returns a delegation_token to use as buyer_delegation_token for checkout/payment. You cannot obtain this code yourself — the user must read it from their email and give it to you.',
     inputSchema: {
       type: 'object',
@@ -446,6 +498,7 @@ const TOOL_DEFINITIONS: Tool[] = [
   {
     name: 'check_delegation',
     annotations: { title: 'Check approval status', readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    outputSchema: OUTPUT_SCHEMAS['check_delegation'],
     description: 'Poll for human approval of a delegation request. When status is "approved", returns the delegation_token to use as buyer_delegation_token in execute_checkout.',
     inputSchema: {
       type: 'object',
@@ -458,6 +511,7 @@ const TOOL_DEFINITIONS: Tool[] = [
   {
     name: 'get_payment_methods',
     annotations: { title: 'Get payment methods', readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    outputSchema: OUTPUT_SCHEMAS['get_payment_methods'],
     description:
       'STEP 1 of the in-chat payment flow. Returns the payment channels available for an order (e.g. "mobile_money", "card") plus a `gateways` array of the enabled payment gateways (each with id, label, and its channels). When more than one gateway is listed, ask the buyer which they want to use and pass it as `gateway` to initiate_payment. Call this first, after an order exists. Then call initiate_payment with the chosen channel (and gateway if more than one). site_id falls back to DEFAULT_SITE_ID if omitted.',
     inputSchema: {
@@ -472,6 +526,7 @@ const TOOL_DEFINITIONS: Tool[] = [
   {
     name: 'initiate_payment',
     annotations: { title: 'Start payment', readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+    outputSchema: OUTPUT_SCHEMAS['initiate_payment'],
     description:
       'STEP 2 of the in-chat payment flow. Starts a payment session for an order and returns a PaymentSession with an `instruction` the agent renders in chat. REQUIRES a buyer_delegation_token — obtain it exactly like execute_checkout: call request_delegation, have the user approve in chat, then check_delegation to get the token (spending money always needs human approval). For channel "mobile_money" you MUST collect the buyer\'s `phone` (Ghana: 055… or +233…) and `provider` — use codes mtn, vod (Vodafone/Telecel), or tgo (AirtelTigo); aliases telecel→vod, tigo→tgo are accepted. ALWAYS quote the **Show this instruction to the buyer** line from the response verbatim (Paystack display_text). For channel "card", no phone/provider is needed; the response instruction contains an `authorization_url` you send the user to. After calling: if instruction.action == "submit_otp", ask the user for the OTP and call submit_payment_otp. If instruction.action == "approve_on_phone", tell the user to approve the prompt on their phone, then poll get_payment_status. If instruction.action == "redirect" (card), send the user the authorization_url, then poll get_payment_status.',
     inputSchema: {
@@ -493,7 +548,7 @@ const TOOL_DEFINITIONS: Tool[] = [
         },
         gateway: {
           type: 'string',
-          enum: ['paystack', 'stripe'],
+          enum: ['paystack', 'stripe', 'paypal'],
           description:
             'Payment gateway to use when the store has more than one enabled (see get_payment_methods.gateways[].id). Optional — defaults to the store\'s first enabled gateway.',
         },
@@ -508,6 +563,7 @@ const TOOL_DEFINITIONS: Tool[] = [
   {
     name: 'submit_payment_otp',
     annotations: { title: 'Submit payment code', readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+    outputSchema: OUTPUT_SCHEMAS['submit_payment_otp'],
     description:
       'STEP 3 (mobile_money only, when initiate_payment returned instruction.action == "submit_otp"). Submits the one-time password the buyer received to authorise the mobile-money charge. REQUIRES the same buyer_delegation_token used for initiate_payment. After submitting, poll get_payment_status until payment_status is "paid"/"processing" or "failed".',
     inputSchema: {
@@ -527,6 +583,7 @@ const TOOL_DEFINITIONS: Tool[] = [
   {
     name: 'get_payment_status',
     annotations: { title: 'Check payment status', readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    outputSchema: OUTPUT_SCHEMAS['get_payment_status'],
     description:
       'FINAL STEP of the in-chat payment flow. Returns the current PaymentSession for an order. Poll this (every ~5 seconds) after initiate_payment/submit_payment_otp until payment_status becomes "paid" or "processing" (success — the order is confirmed) or "failed" (tell the user; they can retry by initiating a new payment). Do NOT treat the purchase as complete until this returns "paid" or "processing". No delegation needed (read-only).',
     inputSchema: {

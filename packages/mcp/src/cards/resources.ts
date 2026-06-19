@@ -17,6 +17,9 @@ interface UiResourceDef {
   name: string;
   description: string;
   bundle: string; // filename in dist/ui/ (tsup IIFE output)
+  widgetDescription: string;
+  invoking: string;
+  invoked: string;
 }
 
 const RESOURCES: UiResourceDef[] = [
@@ -25,24 +28,36 @@ const RESOURCES: UiResourceDef[] = [
     name: 'Synchronity product card',
     description: 'Interactive single-product card with quantity, addon pills, and Add to cart.',
     bundle: 'product.global.js',
+    widgetDescription: 'Interactive product card with quantity and add-to-cart.',
+    invoking: 'Loading product…',
+    invoked: 'Product ready',
   },
   {
     uri: 'ui://synchronity/product-list',
     name: 'Synchronity product list',
     description: 'Interactive product list with per-row quantity and Add to cart.',
     bundle: 'product-list.global.js',
+    widgetDescription: 'Interactive product list with per-item add-to-cart.',
+    invoking: 'Searching products…',
+    invoked: 'Products ready',
   },
   {
     uri: 'ui://synchronity/cart',
     name: 'Synchronity cart',
     description: 'Interactive cart card with line items, totals, and remove actions.',
     bundle: 'cart.global.js',
+    widgetDescription: 'Interactive cart with line items and totals.',
+    invoking: 'Updating cart…',
+    invoked: 'Cart ready',
   },
   {
     uri: 'ui://synchronity/multi-cart',
     name: 'Synchronity multi-store cart',
     description: 'Rich cart card per store for a multi-store quick checkout.',
     bundle: 'multi-cart.global.js',
+    widgetDescription: 'Per-store carts for multi-store checkout.',
+    invoking: 'Assembling carts…',
+    invoked: 'Carts ready',
   },
 ];
 
@@ -124,7 +139,12 @@ export function listUiResources() {
     name: r.name,
     description: r.description,
     mimeType: RESOURCE_MIME_TYPE,
-    _meta: { ui: UI_META },
+    _meta: {
+      ui: UI_META,
+      'openai/widgetDescription': r.widgetDescription,
+      'openai/toolInvocation/invoking': r.invoking,
+      'openai/toolInvocation/invoked': r.invoked,
+    },
   }));
 }
 
