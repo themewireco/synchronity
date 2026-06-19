@@ -170,7 +170,9 @@ export function listUiResources(opts?: ResourceServeOpts) {
       'openai/widgetDescription': r.widgetDescription,
       'openai/toolInvocation/invoking': r.invoking,
       'openai/toolInvocation/invoked': r.invoked,
-      ...(opts?.openai ? { 'openai/widgetCSP': OPENAI_WIDGET_CSP } : {}),
+      ...(opts?.openai
+        ? { 'openai/widgetCSP': OPENAI_WIDGET_CSP, 'openai/widgetAccessible': true }
+        : {}),
     },
   }));
 }

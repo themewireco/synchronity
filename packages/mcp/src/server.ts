@@ -598,6 +598,32 @@ export const TOOL_DEFINITIONS: Tool[] = [
 ];
 
 /**
+ * Per-View "tool is running / done" status text + the `openai/widgetAccessible`
+ * flag that ChatGPT REQUIRES to render a widget. Without `openai/widgetAccessible`
+ * (which defaults to false) ChatGPT runs the tool and shows the structuredContent
+ * as text but never mounts the View. `openai/toolInvocation/*` belong on the tool
+ * descriptor (per the Apps SDK reference), not just the resource. Keyed by the
+ * descriptor's existing `_meta.ui.resourceUri`. Claude ignores these openai/* keys.
+ */
+const VIEW_TOOL_INVOCATION: Record<string, { invoking: string; invoked: string }> = {
+  'ui://synchronity/product': { invoking: 'Loading product…', invoked: 'Product ready' },
+  'ui://synchronity/product-list': { invoking: 'Searching products…', invoked: 'Products ready' },
+  'ui://synchronity/cart': { invoking: 'Updating cart…', invoked: 'Cart ready' },
+};
+
+for (const tool of TOOL_DEFINITIONS) {
+  const meta = tool._meta as Record<string, unknown> | undefined;
+  const uri = (meta?.ui as { resourceUri?: string } | undefined)?.resourceUri;
+  if (!meta || !uri) continue;
+  meta['openai/widgetAccessible'] = true;
+  const inv = VIEW_TOOL_INVOCATION[uri];
+  if (inv) {
+    meta['openai/toolInvocation/invoking'] = inv.invoking;
+    meta['openai/toolInvocation/invoked'] = inv.invoked;
+  }
+}
+
+/**
  * Ensure token is valid, attempting refresh if expired
  * This function now handles BOTH cases:
  * 1. Token is about to expire (within 5 min buffer) - normal refresh
