@@ -60,6 +60,36 @@ describe('host-openai adapter', () => {
     expect((res as any).structuredContent).toBe(bare);
   });
 
+  it('renders when ChatGPT delivers via the MCP-Apps ui/notifications/tool-result bridge', () => {
+    // No toolOutput at boot — data arrives over the postMessage bridge instead.
+    (window as any).openai = {};
+    const root = document.createElement('div');
+    const render = vi.fn();
+    bootOpenAi(root, render);
+    expect(render).not.toHaveBeenCalled();
+
+    const model = { kind: 'productList', siteId: 's1', products: [] };
+    // event.source must equal window.parent for the listener to accept it.
+    window.dispatchEvent(new MessageEvent('message', {
+      source: window.parent as Window,
+      data: { method: 'ui/notifications/tool-result', params: { structuredContent: model } },
+    }));
+    expect(render).toHaveBeenCalledTimes(1);
+    expect(render.mock.calls[0][0]).toEqual(model);
+  });
+
+  it('ignores bridge messages from a non-parent source', () => {
+    (window as any).openai = {};
+    const root = document.createElement('div');
+    const render = vi.fn();
+    bootOpenAi(root, render);
+    window.dispatchEvent(new MessageEvent('message', {
+      source: null,
+      data: { method: 'ui/notifications/tool-result', params: { structuredContent: { kind: 'cart' } } },
+    }));
+    expect(render).not.toHaveBeenCalled();
+  });
+
   it('tags the document with the openai host + theme for the Apps-SDK style overrides', () => {
     (window as any).openai = { toolOutput: { kind: 'cart', siteId: 's1', cartId: 'c1', items: [], subtotal: '0', total: '0' }, theme: 'dark', locale: 'en-US' };
     const root = document.createElement('div');

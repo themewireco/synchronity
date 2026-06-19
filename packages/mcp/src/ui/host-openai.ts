@@ -114,14 +114,28 @@ export function bootOpenAi(root: HTMLElement, render: (model: CardModel, ctx: Vi
     },
   };
 
-  const paint = () => {
-    const model = window.openai?.toolOutput as CardModel | undefined;
-    if (model && typeof model === 'object') render(model, ctx);
+  const paintModel = (model: unknown) => {
+    if (model && typeof model === 'object') render(model as CardModel, ctx);
   };
+  const paint = () => paintModel(window.openai?.toolOutput);
 
   // Re-render whenever the host pushes new globals (e.g. updated toolOutput),
   // and re-apply theme/locale in case they changed.
   window.addEventListener('openai:set_globals', () => { applyHostChrome(); paint(); });
-  // Initial render from the tool output already present at boot.
+
+  // Modern ChatGPT delivers the tool result over the MCP-Apps bridge
+  // (`ui/notifications/tool-result` postMessage — the SAME channel Claude uses),
+  // NOT always via `window.openai.toolOutput`. Without this listener the View
+  // mounts but never receives data → blank → ChatGPT falls back to text. Read the
+  // CardModel from whichever envelope shape the host sends.
+  window.addEventListener('message', (event: MessageEvent) => {
+    if (event.source !== window.parent) return;
+    const msg = event.data as { method?: string; params?: Record<string, unknown> } | undefined;
+    if (!msg || msg.method !== 'ui/notifications/tool-result') return;
+    const p = (msg.params ?? {}) as Record<string, any>;
+    paintModel(p.structuredContent ?? p.result?.structuredContent ?? p.toolResult?.structuredContent ?? p.toolOutput);
+  });
+
+  // Initial render from the tool output already present at boot (if any).
   paint();
 }
