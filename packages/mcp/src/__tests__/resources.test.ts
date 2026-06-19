@@ -33,3 +33,13 @@ describe('MCP Apps UI resources', () => {
     expect(readUiResource('ui://synchronity/nope')).toBeUndefined();
   });
 });
+
+describe('UI resources carry ChatGPT widget polish meta', () => {
+  it('every resource has openai/widgetDescription and toolInvocation strings', () => {
+    for (const r of listUiResources() as any[]) {
+      expect(r._meta?.['openai/widgetDescription'], `${r.uri}`).toBeTruthy();
+      expect(r._meta?.['openai/toolInvocation/invoking'], `${r.uri}`).toBeTruthy();
+      expect(r._meta?.['openai/toolInvocation/invoked'], `${r.uri}`).toBeTruthy();
+    }
+  });
+});

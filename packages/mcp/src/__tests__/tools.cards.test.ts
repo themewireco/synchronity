@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { getProduct, requestDelegation, searchProducts } from '../tools.js';
+import Ajv from 'ajv';
+import { getProduct, listOrders, listSites, requestDelegation, searchProducts } from '../tools.js';
+import { orderListSchema, siteListSchema } from '../cards/outputSchemas.js';
 
 const product = { product_id: 'p1', site_id: 's1', title: 'Vintage Tee',
   price: { amount: '26.00', currency: 'USD' }, availability: 'in_stock',
@@ -106,5 +108,23 @@ describe('request_delegation returns a Markdown delegation card', () => {
     const text = textOf(out);
     expect(text).toContain('https://gw.example.com/authorize');
     expect(text).not.toContain('localhost:3000');
+  });
+});
+
+describe('text-list tools now carry schema-conformant structuredContent', () => {
+  const ajvList = new Ajv({ allErrors: true, strict: false });
+
+  it('list_sites returns { sites: [...] }', async () => {
+    const cfg = { gatewayUrl: 'https://gw.example.com', ait: 'tok' } as any;
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ sites: [{ id: 's1', name: 'Store', platform: 'shopify' }] }) })) as any);
+    const out: any = await listSites({} as any, {}, cfg);
+    expect(ajvList.validate(siteListSchema, out.structuredContent), JSON.stringify(ajvList.errors)).toBe(true);
+    vi.unstubAllGlobals();
+  });
+
+  it('list_orders returns { orders: [...] }', async () => {
+    const client = { orders: { list: async () => ({ orders: [{ order_id: 'o1', status: 'completed', total: { amount: '10', currency: 'USD' } }] }) } } as any;
+    const out: any = await listOrders(client, { site_id: 's1' }, {} as any);
+    expect(ajvList.validate(orderListSchema, out.structuredContent), JSON.stringify(ajvList.errors)).toBe(true);
   });
 });

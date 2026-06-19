@@ -490,7 +490,12 @@ export const listOrders: ToolImplementation = async (client, args) => {
     limit: limit as number,
   }, buyer_delegation_token as string | undefined);
 
-  return orderListMarkdown(orders);
+  const orderList = orders as { orders?: unknown[]; data?: unknown[] };
+  const arr = orderList.orders ?? orderList.data ?? (Array.isArray(orders) ? orders : []);
+  return {
+    content: [{ type: 'text', text: orderListMarkdown(orders) }],
+    structuredContent: { orders: arr },
+  };
 };
 
 /**
@@ -504,7 +509,11 @@ export const listSites: ToolImplementation = async (client, args, config) => {
   const data = await res.json() as Record<string, unknown>;
   if (!res.ok) throw new Error(JSON.stringify(data));
   rememberSiteNames(data);   // cache id -> name for human-readable output elsewhere
-  return siteListMarkdown(data);
+  const sitesArr = (data.sites ?? data.data ?? (Array.isArray(data) ? data : [])) as unknown[];
+  return {
+    content: [{ type: 'text', text: siteListMarkdown(data) }],
+    structuredContent: { sites: sitesArr },
+  };
 };
 
 /**
@@ -781,7 +790,7 @@ export const initiatePayment: ToolImplementation = async (client, args) => {
     channel: channel as 'mobile_money' | 'card',
     phone: channel === 'mobile_money' ? normalizeGhanaPhone(phone as string) : undefined,
     provider: normalizedProvider,
-    ...(gateway ? { gateway: gateway as 'paystack' | 'stripe' } : {}),
+    ...(gateway ? { gateway: gateway as 'paystack' | 'stripe' | 'paypal' } : {}),
     buyer_delegation_token: buyer_delegation_token as string | undefined,
   });
   return {
