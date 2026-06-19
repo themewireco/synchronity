@@ -681,7 +681,14 @@ export function createMCPServer(config: {
   ait: string;
   timeout?: number;
   debug?: boolean;
+  /**
+   * Canonical client name (e.g. 'ChatGPT', 'Claude') from the gateway's client
+   * detection. ChatGPT needs the skybridge resource mime to render widgets; all
+   * other hosts get the MCP-Apps standard mime.
+   */
+  clientName?: string;
 }): Server {
+  const resourceOpts = { openai: config.clientName === 'ChatGPT' };
   // Mutable runtime state — ensureValidToken() mutates .ait when refreshed
   const runtime = { ait: config.ait, gatewayUrl: config.gatewayUrl, debug: config.debug };
 
@@ -707,11 +714,11 @@ export function createMCPServer(config: {
   // MCP Apps UI resources (product / product-list Views). Hosts that support MCP
   // Apps fetch these and render the interactive card; others use the Markdown text.
   server.setRequestHandler(ListResourcesRequestSchema, () => ({
-    resources: listUiResources(),
+    resources: listUiResources(resourceOpts),
   }));
 
   server.setRequestHandler(ReadResourceRequestSchema, (request) => {
-    const result = readUiResource(request.params.uri);
+    const result = readUiResource(request.params.uri, resourceOpts);
     if (!result) {
       throw new Error(`Unknown resource: ${request.params.uri}`);
     }

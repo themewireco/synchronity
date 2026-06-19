@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { listUiResources, readUiResource, RESOURCE_MIME_TYPE } from '../cards/resources.js';
+import { listUiResources, readUiResource, RESOURCE_MIME_TYPE, OPENAI_MIME_TYPE } from '../cards/resources.js';
 
 describe('MCP Apps UI resources', () => {
   it('lists the two product Views with the mcp-app mime + _meta.ui CSP', () => {
@@ -41,5 +41,28 @@ describe('UI resources carry ChatGPT widget polish meta', () => {
       expect(r._meta?.['openai/toolInvocation/invoking'], `${r.uri}`).toBeTruthy();
       expect(r._meta?.['openai/toolInvocation/invoked'], `${r.uri}`).toBeTruthy();
     }
+  });
+});
+
+describe('per-client resource mime (ChatGPT skybridge vs Claude profile)', () => {
+  it('serves skybridge mime + openai/widgetCSP to ChatGPT clients', () => {
+    for (const r of listUiResources({ openai: true }) as any[]) {
+      expect(r.mimeType).toBe(OPENAI_MIME_TYPE);
+      expect(r._meta['openai/widgetCSP']).toBeDefined();
+      expect(r._meta['openai/widgetCSP'].resource_domains).toContain('https:');
+    }
+    const read = readUiResource('ui://synchronity/product', { openai: true })!;
+    expect(read.contents[0].mimeType).toBe(OPENAI_MIME_TYPE);
+    expect((read.contents[0] as any)._meta['openai/widgetCSP']).toBeDefined();
+  });
+
+  it('serves the MCP-Apps profile mime + no openai CSP to non-ChatGPT clients', () => {
+    for (const r of listUiResources() as any[]) {
+      expect(r.mimeType).toBe(RESOURCE_MIME_TYPE);
+      expect(r._meta['openai/widgetCSP']).toBeUndefined();
+    }
+    const read = readUiResource('ui://synchronity/product')!;
+    expect(read.contents[0].mimeType).toBe(RESOURCE_MIME_TYPE);
+    expect((read.contents[0] as any)._meta['openai/widgetCSP']).toBeUndefined();
   });
 });

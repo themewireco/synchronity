@@ -9,7 +9,23 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
+// MCP-Apps standard mime (Claude / spec-compliant hosts key on this).
 export const RESOURCE_MIME_TYPE = 'text/html;profile=mcp-app';
+// OpenAI Apps SDK mime. ChatGPT's bridge ONLY treats a resource as a renderable
+// widget when it is served as `text/html+skybridge`; given the standard mime it
+// falls back to plain text. We serve this variant to ChatGPT clients only, so
+// Claude (which needs the profile mime) is unaffected.
+export const OPENAI_MIME_TYPE = 'text/html+skybridge';
+
+/** Options controlling host-specific resource serialisation. */
+export interface ResourceServeOpts {
+  /** True when the connected client is ChatGPT/OpenAI → emit skybridge mime + CSP. */
+  openai?: boolean;
+}
+
+function mimeFor(opts?: ResourceServeOpts): string {
+  return opts?.openai ? OPENAI_MIME_TYPE : RESOURCE_MIME_TYPE;
+}
 
 /** One UI resource: a ui:// URI mapped to its built browser bundle. */
 interface UiResourceDef {
@@ -132,18 +148,29 @@ function buildHtml(bundleFile: string): string {
   return html;
 }
 
+/**
+ * OpenAI-dialect CSP for ChatGPT. Mirrors UI_META.csp into the field names the
+ * ChatGPT sandbox reads; without it merchant product images (arbitrary HTTPS
+ * CDNs) are blocked even once the widget renders.
+ */
+const OPENAI_WIDGET_CSP = {
+  connect_domains: [] as string[],
+  resource_domains: UI_META.csp.resourceDomains,
+};
+
 /** Resource descriptors for `resources/list`. */
-export function listUiResources() {
+export function listUiResources(opts?: ResourceServeOpts) {
   return RESOURCES.map((r) => ({
     uri: r.uri,
     name: r.name,
     description: r.description,
-    mimeType: RESOURCE_MIME_TYPE,
+    mimeType: mimeFor(opts),
     _meta: {
       ui: UI_META,
       'openai/widgetDescription': r.widgetDescription,
       'openai/toolInvocation/invoking': r.invoking,
       'openai/toolInvocation/invoked': r.invoked,
+      ...(opts?.openai ? { 'openai/widgetCSP': OPENAI_WIDGET_CSP } : {}),
     },
   }));
 }
@@ -152,16 +179,19 @@ export function listUiResources() {
  * `resources/read` handler body for a ui:// URI. Returns undefined for unknown URIs
  * so the caller can surface a proper error.
  */
-export function readUiResource(uri: string) {
+export function readUiResource(uri: string, opts?: ResourceServeOpts) {
   const def = RESOURCES.find((r) => r.uri === uri);
   if (!def) return undefined;
   return {
     contents: [
       {
         uri: def.uri,
-        mimeType: RESOURCE_MIME_TYPE,
+        mimeType: mimeFor(opts),
         text: buildHtml(def.bundle),
-        _meta: { ui: UI_META },
+        _meta: {
+          ui: UI_META,
+          ...(opts?.openai ? { 'openai/widgetCSP': OPENAI_WIDGET_CSP } : {}),
+        },
       },
     ],
   };
