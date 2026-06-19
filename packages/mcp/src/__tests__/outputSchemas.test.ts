@@ -37,6 +37,21 @@ describe('View-backed tools advertise the openai/outputTemplate alias', () => {
       expect(tool?._meta?.['openai/outputTemplate'], `${name} missing alias`).toBe(uri);
     }
   });
+
+  it('each is openai/widgetAccessible and carries descriptor toolInvocation status', () => {
+    for (const name of viewTools) {
+      const tool = (TOOL_DEFINITIONS as any[]).find((t) => t.name === name);
+      // Required for ChatGPT to render the widget (defaults to false otherwise).
+      expect(tool?._meta?.['openai/widgetAccessible'], `${name} not widgetAccessible`).toBe(true);
+      expect(tool?._meta?.['openai/toolInvocation/invoking'], `${name} missing invoking`).toBeTruthy();
+      expect(tool?._meta?.['openai/toolInvocation/invoked'], `${name} missing invoked`).toBeTruthy();
+    }
+  });
+
+  it('non-View tools are not marked widgetAccessible', () => {
+    const tool = (TOOL_DEFINITIONS as any[]).find((t) => t.name === 'list_sites');
+    expect(tool?._meta?.['openai/widgetAccessible']).toBeUndefined();
+  });
 });
 
 describe('card builders produce schema-conformant structuredContent', () => {
