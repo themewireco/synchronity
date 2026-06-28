@@ -17,6 +17,7 @@ This repository contains the public, MIT-licensed pieces:
 | [`packages/mcp`](packages/mcp) | The MCP server — exposes shopping tools to Claude, Cursor, and any MCP client |
 | [`packages/sdk`](packages/sdk) | Typed gateway client used by the MCP server |
 | [`desktop-extension`](desktop-extension) | Claude Desktop extension (`.mcpb`) source — a zero-dependency bridge to the gateway |
+| [`plugins/synchronity`](plugins/synchronity) | Cross-assistant plugin (Claude Code + Codex) — install via the marketplace below |
 | [`woocommerce`](woocommerce) | The Synchronity WooCommerce plugin — makes a store agent-ready |
 
 > Releases attach prebuilt artifacts: the **`synchronity.mcpb`** desktop extension and the **WooCommerce plugin zip**. See [Releases](https://github.com/themewireco/synchronity/releases).
@@ -28,6 +29,23 @@ This repository contains the public, MIT-licensed pieces:
 1. Download **`synchronity.mcpb`** from the [latest release](https://github.com/themewireco/synchronity/releases/latest) (or from [api.synchronity.app/setup/download](https://api.synchronity.app/setup/download)).
 2. Open it with Claude Desktop and click **Install**.
 3. Ask Claude to shop — e.g. *"Search Synchronity for a wireless keyboard."*
+
+### Claude Code (plugin marketplace)
+
+```bash
+/plugin marketplace add themewireco/synchronity
+/plugin install synchronity@synchronity
+```
+
+Then just shop — *"find me a birthday cake from my stores"*. The plugin bundles
+the `synchronity-commerce` skill and runs the MCP server locally via `npx`, so
+there is nothing to clone or build.
+
+### Codex
+
+Add the **Synchronity** plugin from this repo (`plugins/synchronity`). Codex
+reads `.codex-plugin/plugin.json` and connects to the hosted MCP at
+`https://api.synchronity.app/mcp`, with the same `synchronity-commerce` skill.
 
 ### Any MCP client (manual)
 

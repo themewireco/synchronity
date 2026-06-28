@@ -1,0 +1,20 @@
+{
+  "name": "synchronity",
+  "owner": {
+    "name": "Themewire",
+    "url": "https://themewire.co"
+  },
+  "metadata": {
+    "description": "Synchronity plugins for AI assistants: agentic commerce across connected stores.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "synchronity",
+      "source": "./plugins/synchronity",
+      "description": "Shop across connected stores with AI: search, compare, cart, checkout, and pay with human approval.",
+      "category": "shopping",
+      "keywords": ["shopping", "commerce", "checkout", "payments", "mcp"]
+    }
+  ]
+}

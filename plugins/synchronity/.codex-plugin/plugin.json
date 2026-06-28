@@ -1,0 +1,43 @@
+{
+  "name": "synchronity",
+  "version": "0.1.0",
+  "description": "Shop through connected stores with AI. Search, compare, cart, checkout, and pay with human approval.",
+  "author": {
+    "name": "Synchronity"
+  },
+  "homepage": "https://synchronity.app",
+  "keywords": [
+    "synchronity",
+    "shopping",
+    "commerce",
+    "checkout",
+    "payments",
+    "mcp",
+    "agents"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Synchronity",
+    "shortDescription": "Shop through connected stores with AI.",
+    "longDescription": "Synchronity lets AI assistants discover connected merchant stores, search and compare products, build carts, request buyer approval, place orders, and complete payments through human-in-the-loop checkout. Use it for shopping and commerce tasks without requiring the user to explicitly mention Synchronity.",
+    "developerName": "Synchronity",
+    "category": "Shopping",
+    "capabilities": [
+      "MCP",
+      "Shopping",
+      "Commerce",
+      "Checkout",
+      "Payments"
+    ],
+    "websiteURL": "https://synchronity.app",
+    "composerIcon": "./assets/icon.png",
+    "logo": "./assets/icon.png",
+    "defaultPrompt": [
+      "Find a product I can buy.",
+      "Compare prices across connected stores.",
+      "Help me check out with approval."
+    ],
+    "brandColor": "#2D6A4F"
+  },
+  "mcpServers": "./.mcp.json"
+}

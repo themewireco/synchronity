@@ -1,0 +1,30 @@
+{
+  "name": "synchronity",
+  "description": "Shop across connected stores with AI: search, compare, cart, checkout, and pay with human approval.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Synchronity",
+    "url": "https://synchronity.app"
+  },
+  "homepage": "https://synchronity.app",
+  "repository": "https://github.com/themewireco/synchronity",
+  "license": "MIT",
+  "keywords": [
+    "synchronity",
+    "shopping",
+    "commerce",
+    "checkout",
+    "payments",
+    "mcp",
+    "agents"
+  ],
+  "mcpServers": {
+    "synchronity": {
+      "command": "npx",
+      "args": ["-y", "@synchronity/mcp-server"],
+      "env": {
+        "GATEWAY_URL": "https://api.synchronity.app"
+      }
+    }
+  }
+}

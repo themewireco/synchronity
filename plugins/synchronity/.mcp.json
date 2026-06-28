@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "synchronity": {
+      "url": "https://api.synchronity.app/mcp"
+    }
+  }
+}
