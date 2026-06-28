@@ -1,0 +1,4 @@
+interface:
+  display_name: "Synchronity"
+  short_description: "Shop through connected stores with AI."
+  default_prompt: "Find and buy a product from connected stores."
