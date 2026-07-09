@@ -131,9 +131,9 @@ class AgentMesh_Checkout {
 
 		// Debug: Log the generated URLs
 		$logger = wc_get_logger();
-		$logger->debug( 'checkout_url=' . $checkout_url, [ 'source' => 'agentmesh-woocommerce' ] );
-		$logger->debug( 'order_id=' . $order->get_id(), [ 'source' => 'agentmesh-woocommerce' ] );
-		$logger->debug( 'pay_url=' . $pay_url, [ 'source' => 'agentmesh-woocommerce' ] );
+		$logger->debug( 'checkout_url=' . $checkout_url, [ 'source' => 'synchronity-for-woocommerce' ] );
+		$logger->debug( 'order_id=' . $order->get_id(), [ 'source' => 'synchronity-for-woocommerce' ] );
+		$logger->debug( 'pay_url=' . $pay_url, [ 'source' => 'synchronity-for-woocommerce' ] );
 
 		// Set order to pending payment (customer needs to complete payment on checkout page)
 		// Save payment_url and agent info to metadata FIRST (before normalizer reads it)

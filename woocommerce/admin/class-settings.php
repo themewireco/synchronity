@@ -26,7 +26,7 @@ class AgentMesh_Settings {
 	}
 
 	public function add_settings_tab( array $tabs ): array {
-		$tabs['agentmesh'] = __( 'Synchronity', 'agentmesh-woocommerce' );
+		$tabs['agentmesh'] = __( 'Synchronity', 'synchronity-for-woocommerce' );
 		return $tabs;
 	}
 
@@ -124,24 +124,24 @@ class AgentMesh_Settings {
 	public function get_settings(): array {
 		return [
 			[
-				'title' => __( 'Synchronity Settings', 'agentmesh-woocommerce' ),
+				'title' => __( 'Synchronity Settings', 'synchronity-for-woocommerce' ),
 				'type'  => 'title',
-				'desc'  => __( 'Connect your WooCommerce store to the Synchronity network.', 'agentmesh-woocommerce' ),
+				'desc'  => __( 'Connect your WooCommerce store to the Synchronity network.', 'synchronity-for-woocommerce' ),
 				'id'    => 'agentmesh_settings_section',
 			],
 
 			[
-				'title'   => __( 'Enable Synchronity', 'agentmesh-woocommerce' ),
+				'title'   => __( 'Enable Synchronity', 'synchronity-for-woocommerce' ),
 				'type'    => 'checkbox',
-				'desc'    => __( 'Enable the Synchronity connector API on this store.', 'agentmesh-woocommerce' ),
+				'desc'    => __( 'Enable the Synchronity connector API on this store.', 'synchronity-for-woocommerce' ),
 				'id'      => 'agentmesh_enabled',
 				'default' => 'yes',
 			],
 
 			[
-				'title'       => __( 'Gateway URL', 'agentmesh-woocommerce' ),
+				'title'       => __( 'Gateway URL', 'synchronity-for-woocommerce' ),
 				'type'        => 'url',
-				'desc'        => __( 'The base URL of your Synchronity Gateway instance (e.g. https://api.synchronity.app).', 'agentmesh-woocommerce' ),
+				'desc'        => __( 'The base URL of your Synchronity Gateway instance (e.g. https://api.synchronity.app).', 'synchronity-for-woocommerce' ),
 				'id'          => 'agentmesh_gateway_url',
 				'default'     => 'https://api.synchronity.app',
 				'placeholder' => 'https://api.synchronity.app',
@@ -149,9 +149,9 @@ class AgentMesh_Settings {
 			],
 
 			[
-				'title'       => __( 'Connector Key', 'agentmesh-woocommerce' ),
+				'title'       => __( 'Connector Key', 'synchronity-for-woocommerce' ),
 				'type'        => 'password',
-				'desc'        => __( 'The shared secret key the Gateway uses to authenticate requests to this connector. Click "Generate new key" to mint a new one — when the store is already linked, the new key is pushed to Synchronity automatically.', 'agentmesh-woocommerce' ),
+				'desc'        => __( 'The shared secret key the Gateway uses to authenticate requests to this connector. Click "Generate new key" to mint a new one — when the store is already linked, the new key is pushed to Synchronity automatically.', 'synchronity-for-woocommerce' ),
 				'id'          => 'agentmesh_connector_key',
 				'placeholder' => 'amck_...',
 				'css'         => 'min-width:350px;',
@@ -164,70 +164,70 @@ class AgentMesh_Settings {
 			],
 
 			[
-				'title' => __( 'Site ID', 'agentmesh-woocommerce' ),
+				'title' => __( 'Site ID', 'synchronity-for-woocommerce' ),
 				'type'  => 'text',
-				'desc'  => __( 'Your Synchronity-assigned site identifier. Auto-generated if empty.', 'agentmesh-woocommerce' ),
+				'desc'  => __( 'Your Synchronity-assigned site identifier. Auto-generated if empty.', 'synchronity-for-woocommerce' ),
 				'id'    => 'agentmesh_site_id',
 				'css'   => 'min-width:350px;',
 			],
 
 			[
-				'title' => __( 'Permissions', 'agentmesh-woocommerce' ),
+				'title' => __( 'Permissions', 'synchronity-for-woocommerce' ),
 				'type'  => 'title',
 				'id'    => 'agentmesh_permissions_section',
 			],
 
 			[
-				'title'   => __( 'Allow Cart Management', 'agentmesh-woocommerce' ),
+				'title'   => __( 'Allow Cart Management', 'synchronity-for-woocommerce' ),
 				'type'    => 'checkbox',
-				'desc'    => __( 'Allow AI agents to create and manage cart sessions on this store.', 'agentmesh-woocommerce' ),
+				'desc'    => __( 'Allow AI agents to create and manage cart sessions on this store.', 'synchronity-for-woocommerce' ),
 				'id'      => 'agentmesh_allow_cart',
 				'default' => 'yes',
 			],
 
 			[
-				'title'   => __( 'Allow Checkout Execution', 'agentmesh-woocommerce' ),
+				'title'   => __( 'Allow Checkout Execution', 'synchronity-for-woocommerce' ),
 				'type'    => 'checkbox',
-				'desc'    => __( 'Allow AI agents to place orders on behalf of users via delegation tokens.', 'agentmesh-woocommerce' ),
+				'desc'    => __( 'Allow AI agents to place orders on behalf of users via delegation tokens.', 'synchronity-for-woocommerce' ),
 				'id'      => 'agentmesh_allow_checkout',
 				'default' => 'yes',
 			],
 
 			[
-				'title'   => __( 'Read-Only Mode', 'agentmesh-woocommerce' ),
+				'title'   => __( 'Read-Only Mode', 'synchronity-for-woocommerce' ),
 				'type'    => 'checkbox',
-				'desc'    => __( 'Restrict the connector to product and manifest reads only. Disables cart and checkout.', 'agentmesh-woocommerce' ),
+				'desc'    => __( 'Restrict the connector to product and manifest reads only. Disables cart and checkout.', 'synchronity-for-woocommerce' ),
 				'id'      => 'agentmesh_read_only',
 				'default' => 'no',
 			],
 
 			[
-				'title' => __( 'Inline Payments (Paystack)', 'agentmesh-woocommerce' ),
+				'title' => __( 'Inline Payments (Paystack)', 'synchronity-for-woocommerce' ),
 				'type'  => 'title',
-				'desc'  => __( 'Let AI agents initiate and complete payment inside the chat. Paystack keys are read from your Paystack for WooCommerce plugin settings when present.', 'agentmesh-woocommerce' ),
+				'desc'  => __( 'Let AI agents initiate and complete payment inside the chat. Paystack keys are read from your Paystack for WooCommerce plugin settings when present.', 'synchronity-for-woocommerce' ),
 				'id'    => 'agentmesh_payments_section',
 			],
 
 			[
-				'title'   => __( 'Enable Mobile Money', 'agentmesh-woocommerce' ),
+				'title'   => __( 'Enable Mobile Money', 'synchronity-for-woocommerce' ),
 				'type'    => 'checkbox',
-				'desc'    => __( 'Offer in-chat mobile money payments (MTN, Vodafone, AirtelTigo). Requires a GHS store currency.', 'agentmesh-woocommerce' ),
+				'desc'    => __( 'Offer in-chat mobile money payments (MTN, Vodafone, AirtelTigo). Requires a GHS store currency.', 'synchronity-for-woocommerce' ),
 				'id'      => 'agentmesh_payment_enable_mobile_money',
 				'default' => 'yes',
 			],
 
 			[
-				'title'   => __( 'Enable Card', 'agentmesh-woocommerce' ),
+				'title'   => __( 'Enable Card', 'synchronity-for-woocommerce' ),
 				'type'    => 'checkbox',
-				'desc'    => __( 'Offer card payments via a Paystack-hosted secure page (no card details touch the chat).', 'agentmesh-woocommerce' ),
+				'desc'    => __( 'Offer card payments via a Paystack-hosted secure page (no card details touch the chat).', 'synchronity-for-woocommerce' ),
 				'id'      => 'agentmesh_payment_enable_card',
 				'default' => 'yes',
 			],
 
 			[
-				'title'    => __( 'Paystack Webhook URL', 'agentmesh-woocommerce' ),
+				'title'    => __( 'Paystack Webhook URL', 'synchronity-for-woocommerce' ),
 				'type'     => 'text',
-				'desc'     => __( 'Paste this URL into your Paystack dashboard (Settings → API Keys & Webhooks → Webhook URL) so payments confirm automatically.', 'agentmesh-woocommerce' ),
+				'desc'     => __( 'Paste this URL into your Paystack dashboard (Settings → API Keys & Webhooks → Webhook URL) so payments confirm automatically.', 'synchronity-for-woocommerce' ),
 				'id'       => 'agentmesh_paystack_webhook_url_display',
 				'value'    => $this->get_paystack_webhook_url(),
 				'custom_attributes' => [ 'readonly' => 'readonly' ],
@@ -240,24 +240,24 @@ class AgentMesh_Settings {
 			],
 
 			[
-				'title' => __( 'Inline Payments (Stripe)', 'agentmesh-woocommerce' ),
+				'title' => __( 'Inline Payments (Stripe)', 'synchronity-for-woocommerce' ),
 				'type'  => 'title',
-				'desc'  => __( 'Let AI agents pay by card via a Stripe-hosted secure page. Stripe keys are read automatically from your Stripe for WooCommerce plugin — nothing to enter here.', 'agentmesh-woocommerce' ),
+				'desc'  => __( 'Let AI agents pay by card via a Stripe-hosted secure page. Stripe keys are read automatically from your Stripe for WooCommerce plugin — nothing to enter here.', 'synchronity-for-woocommerce' ),
 				'id'    => 'agentmesh_stripe_section',
 			],
 
 			[
-				'title'   => __( 'Enable Stripe', 'agentmesh-woocommerce' ),
+				'title'   => __( 'Enable Stripe', 'synchronity-for-woocommerce' ),
 				'type'    => 'checkbox',
-				'desc'    => __( 'Offer card payments via a Stripe-hosted secure page (no card details touch the chat).', 'agentmesh-woocommerce' ),
+				'desc'    => __( 'Offer card payments via a Stripe-hosted secure page (no card details touch the chat).', 'synchronity-for-woocommerce' ),
 				'id'      => 'agentmesh_payment_enable_stripe',
 				'default' => 'no',
 			],
 
 			[
-				'title'    => __( 'Stripe Webhook URL', 'agentmesh-woocommerce' ),
+				'title'    => __( 'Stripe Webhook URL', 'synchronity-for-woocommerce' ),
 				'type'     => 'text',
-				'desc'     => __( 'Add this URL as a Stripe webhook endpoint (events: checkout.session.completed, checkout.session.expired), then paste its signing secret below.', 'agentmesh-woocommerce' ),
+				'desc'     => __( 'Add this URL as a Stripe webhook endpoint (events: checkout.session.completed, checkout.session.expired), then paste its signing secret below.', 'synchronity-for-woocommerce' ),
 				'id'       => 'agentmesh_stripe_webhook_url_display',
 				'value'    => $this->get_stripe_webhook_url(),
 				'custom_attributes' => [ 'readonly' => 'readonly' ],
@@ -265,9 +265,9 @@ class AgentMesh_Settings {
 			],
 
 			[
-				'title'   => __( 'Stripe Webhook Signing Secret', 'agentmesh-woocommerce' ),
+				'title'   => __( 'Stripe Webhook Signing Secret', 'synchronity-for-woocommerce' ),
 				'type'    => 'password',
-				'desc'    => __( 'Optional. Stripe webhook signing secret (whsec_…). Leave blank to rely on payment-status polling; provide it for faster webhook-driven confirmation.', 'agentmesh-woocommerce' ),
+				'desc'    => __( 'Optional. Stripe webhook signing secret (whsec_…). Leave blank to rely on payment-status polling; provide it for faster webhook-driven confirmation.', 'synchronity-for-woocommerce' ),
 				'id'      => 'agentmesh_stripe_webhook_secret',
 				'default' => '',
 			],
@@ -278,24 +278,24 @@ class AgentMesh_Settings {
 			],
 
 			[
-				'title' => __( 'Inline Payments (PayPal)', 'agentmesh-woocommerce' ),
+				'title' => __( 'Inline Payments (PayPal)', 'synchronity-for-woocommerce' ),
 				'type'  => 'title',
-				'desc'  => __( 'Let AI agents pay via a PayPal-hosted secure page (PayPal balance or guest card). Credentials are read automatically from your WooCommerce PayPal Payments plugin when present.', 'agentmesh-woocommerce' ),
+				'desc'  => __( 'Let AI agents pay via a PayPal-hosted secure page (PayPal balance or guest card). Credentials are read automatically from your WooCommerce PayPal Payments plugin when present.', 'synchronity-for-woocommerce' ),
 				'id'    => 'agentmesh_paypal_section',
 			],
 
 			[
-				'title'   => __( 'Enable PayPal', 'agentmesh-woocommerce' ),
+				'title'   => __( 'Enable PayPal', 'synchronity-for-woocommerce' ),
 				'type'    => 'checkbox',
-				'desc'    => __( 'Offer PayPal payments via a PayPal-hosted secure page (no card details touch the chat). Shown only for PayPal-supported currencies.', 'agentmesh-woocommerce' ),
+				'desc'    => __( 'Offer PayPal payments via a PayPal-hosted secure page (no card details touch the chat). Shown only for PayPal-supported currencies.', 'synchronity-for-woocommerce' ),
 				'id'      => 'agentmesh_payment_enable_paypal',
 				'default' => 'no',
 			],
 
 			[
-				'title'    => __( 'PayPal Webhook URL', 'agentmesh-woocommerce' ),
+				'title'    => __( 'PayPal Webhook URL', 'synchronity-for-woocommerce' ),
 				'type'     => 'text',
-				'desc'     => __( 'Add this URL as a webhook in your PayPal developer dashboard (events: PAYMENT.CAPTURE.COMPLETED, PAYMENT.CAPTURE.DENIED), then paste its Webhook ID below.', 'agentmesh-woocommerce' ),
+				'desc'     => __( 'Add this URL as a webhook in your PayPal developer dashboard (events: PAYMENT.CAPTURE.COMPLETED, PAYMENT.CAPTURE.DENIED), then paste its Webhook ID below.', 'synchronity-for-woocommerce' ),
 				'id'       => 'agentmesh_paypal_webhook_url_display',
 				'value'    => $this->get_paypal_webhook_url(),
 				'custom_attributes' => [ 'readonly' => 'readonly' ],
@@ -303,9 +303,9 @@ class AgentMesh_Settings {
 			],
 
 			[
-				'title'   => __( 'PayPal Webhook ID', 'agentmesh-woocommerce' ),
+				'title'   => __( 'PayPal Webhook ID', 'synchronity-for-woocommerce' ),
 				'type'    => 'text',
-				'desc'    => __( 'Optional. The Webhook ID from your PayPal app (Webhooks). Leave blank to rely on payment-status polling; provide it for faster webhook-driven confirmation.', 'agentmesh-woocommerce' ),
+				'desc'    => __( 'Optional. The Webhook ID from your PayPal app (Webhooks). Leave blank to rely on payment-status polling; provide it for faster webhook-driven confirmation.', 'synchronity-for-woocommerce' ),
 				'id'      => 'agentmesh_paypal_webhook_id',
 				'default' => '',
 			],
@@ -317,66 +317,66 @@ class AgentMesh_Settings {
 
 			// ── Product Add-ons (ACF) ───────────────────────────────────
 			[
-				'title' => __( 'Product Add-ons (ACF)', 'agentmesh-woocommerce' ),
+				'title' => __( 'Product Add-ons (ACF)', 'synchronity-for-woocommerce' ),
 				'type'  => 'title',
 				'desc'  => $this->addons_section_desc(),
 				'id'    => 'agentmesh_addons_section',
 			],
 
 			[
-				'title'   => __( 'Enable Product Add-ons', 'agentmesh-woocommerce' ),
+				'title'   => __( 'Enable Product Add-ons', 'synchronity-for-woocommerce' ),
 				'type'    => 'checkbox',
-				'desc'    => __( 'Surface per-product options defined with Advanced Custom Fields (ACF) so AI agents can collect a buyer\'s choices. Requires the ACF plugin.', 'agentmesh-woocommerce' ),
+				'desc'    => __( 'Surface per-product options defined with Advanced Custom Fields (ACF) so AI agents can collect a buyer\'s choices. Requires the ACF plugin.', 'synchronity-for-woocommerce' ),
 				'id'      => 'agentmesh_addons_enabled',
 				'default' => 'yes',
 			],
 
 			[
-				'title'   => __( 'Enable Grouped (Nested) Add-ons', 'agentmesh-woocommerce' ),
+				'title'   => __( 'Enable Grouped (Nested) Add-ons', 'synchronity-for-woocommerce' ),
 				'type'    => 'checkbox',
-				'desc'    => __( 'Off by default. Enable only if this store builds product options as a NESTED ACF repeater (an outer repeater of groups, each with an inner repeater of priced options). When on, each outer row becomes its own add-on. Leave off for normal single fields / flat repeaters.', 'agentmesh-woocommerce' ),
+				'desc'    => __( 'Off by default. Enable only if this store builds product options as a NESTED ACF repeater (an outer repeater of groups, each with an inner repeater of priced options). When on, each outer row becomes its own add-on. Leave off for normal single fields / flat repeaters.', 'synchronity-for-woocommerce' ),
 				'id'      => 'agentmesh_addon_grouped_enabled',
 				'default' => 'no',
 			],
 
 			[
-				'title'      => __( 'Hidden Add-on Fields', 'agentmesh-woocommerce' ),
+				'title'      => __( 'Hidden Add-on Fields', 'synchronity-for-woocommerce' ),
 				'type'       => 'agentmesh_field_multiselect',
-				'desc'       => __( 'Select ACF fields to hide from add-ons (e.g. internal fields). Matching fields are never exposed.', 'agentmesh-woocommerce' ),
+				'desc'       => __( 'Select ACF fields to hide from add-ons (e.g. internal fields). Matching fields are never exposed.', 'synchronity-for-woocommerce' ),
 				'id'         => 'agentmesh_addon_hidden_fields',
 				'agm_source' => 'fields',
 			],
 
 			[
-				'title'    => __( 'Add-on Price Map', 'agentmesh-woocommerce' ),
+				'title'    => __( 'Add-on Price Map', 'synchronity-for-woocommerce' ),
 				'type'     => 'agentmesh_price_map_builder',
-				'desc'     => __( 'Optional. Attach a fee to each priced add-on field: a fixed per-unit fee, a fee per option value, or read the fee from another ACF field. Amounts are in the store currency. Unmapped add-ons fall back to a repeater price subfield, a <code>(+N)</code>/<code>(-N)</code> label suffix, or free.', 'agentmesh-woocommerce' ),
+				'desc'     => __( 'Optional. Attach a fee to each priced add-on field: a fixed per-unit fee, a fee per option value, or read the fee from another ACF field. Amounts are in the store currency. Unmapped add-ons fall back to a repeater price subfield, a <code>(+N)</code>/<code>(-N)</code> label suffix, or free.', 'synchronity-for-woocommerce' ),
 				'id'       => 'agentmesh_addon_price_map',
 			],
 
 			[
-				'title'   => __( 'Add-on Pricing Mode', 'agentmesh-woocommerce' ),
+				'title'   => __( 'Add-on Pricing Mode', 'synchronity-for-woocommerce' ),
 				'type'    => 'select',
-				'desc'    => __( '"Additive" (default): add-on prices are added on top of the product price. "Absolute": the line price is the sum of the selected option prices and the product base price is ignored — for builder/configurator products whose base price is just a placeholder.', 'agentmesh-woocommerce' ),
+				'desc'    => __( '"Additive" (default): add-on prices are added on top of the product price. "Absolute": the line price is the sum of the selected option prices and the product base price is ignored — for builder/configurator products whose base price is just a placeholder.', 'synchronity-for-woocommerce' ),
 				'id'      => 'agentmesh_addon_pricing_mode',
 				'default' => 'additive',
 				'options' => [
-					'additive' => __( 'Additive (base + add-ons)', 'agentmesh-woocommerce' ),
-					'absolute' => __( 'Absolute (sum of selected options)', 'agentmesh-woocommerce' ),
+					'additive' => __( 'Additive (base + add-ons)', 'synchronity-for-woocommerce' ),
+					'absolute' => __( 'Absolute (sum of selected options)', 'synchronity-for-woocommerce' ),
 				],
 			],
 
 			[
-				'title' => __( 'Product price source', 'agentmesh-woocommerce' ),
+				'title' => __( 'Product price source', 'synchronity-for-woocommerce' ),
 				'type'  => 'agentmesh_price_source_select',
-				'desc'  => __( 'Optional. ACF field holding the consumer/display price (e.g. non_price). Takes effect once consumer pricing is enabled; until then the WooCommerce price is used.', 'agentmesh-woocommerce' ),
+				'desc'  => __( 'Optional. ACF field holding the consumer/display price (e.g. non_price). Takes effect once consumer pricing is enabled; until then the WooCommerce price is used.', 'synchronity-for-woocommerce' ),
 				'id'    => 'agentmesh_product_price_field',
 			],
 
 			[
-				'title'      => __( 'Multi-select Add-on Groups', 'agentmesh-woocommerce' ),
+				'title'      => __( 'Multi-select Add-on Groups', 'synchronity-for-woocommerce' ),
 				'type'       => 'agentmesh_field_multiselect',
-				'desc'       => __( 'Select add-on group titles that allow choosing MORE THAN ONE option (e.g. "Extra Toppings"). All other groups are single-choice. Applies to grouped (nested-repeater) add-ons.', 'agentmesh-woocommerce' ),
+				'desc'       => __( 'Select add-on group titles that allow choosing MORE THAN ONE option (e.g. "Extra Toppings"). All other groups are single-choice. Applies to grouped (nested-repeater) add-ons.', 'synchronity-for-woocommerce' ),
 				'id'         => 'agentmesh_addon_multi_groups',
 				'agm_source' => 'groups',
 			],
@@ -398,9 +398,9 @@ class AgentMesh_Settings {
 	 */
 	private function addons_section_desc(): string {
 		if ( ! function_exists( 'get_field_objects' ) ) {
-			return __( 'Advanced Custom Fields (ACF) was not detected on this site. Product add-ons are inactive until ACF is installed and active — the settings below have no effect.', 'agentmesh-woocommerce' );
+			return __( 'Advanced Custom Fields (ACF) was not detected on this site. Product add-ons are inactive until ACF is installed and active — the settings below have no effect.', 'synchronity-for-woocommerce' );
 		}
-		return __( 'Expose ACF-defined product options to AI agents as purchasable add-ons. Choices, requirements, and optional price modifiers carry through cart and checkout onto the order.', 'agentmesh-woocommerce' );
+		return __( 'Expose ACF-defined product options to AI agents as purchasable add-ons. Choices, requirements, and optional price modifiers carry through cart and checkout onto the order.', 'synchronity-for-woocommerce' );
 	}
 
 	/**
@@ -422,7 +422,7 @@ class AgentMesh_Settings {
 					data-rows="<?php echo esc_attr( wp_json_encode( $rows ) ); ?>"
 				></div>
 				<input type="hidden" id="agm-pricemap-json" name="agentmesh_addon_price_map" value="<?php echo esc_attr( $json ); ?>">
-				<p><a href="#" id="agm-pricemap-toggle"><?php echo esc_html__( 'Edit as JSON', 'agentmesh-woocommerce' ); ?></a></p>
+				<p><a href="#" id="agm-pricemap-toggle"><?php echo esc_html__( 'Edit as JSON', 'synchronity-for-woocommerce' ); ?></a></p>
 				<textarea id="agm-pricemap-raw" style="display:none;min-width:450px;height:120px;font-family:monospace;"><?php echo esc_textarea( $json ); ?></textarea>
 				<?php if ( '' !== $desc ) : ?>
 					<p class="description"><?php echo wp_kses_post( $desc ); ?></p>
@@ -478,7 +478,7 @@ class AgentMesh_Settings {
 					<p class="description"><?php echo wp_kses_post( $field['desc'] ); ?></p>
 				<?php endif; ?>
 				<?php if ( $show_group_note ) : ?>
-					<p class="description"><?php echo esc_html__( 'Only applies when Grouped Add-ons is enabled.', 'agentmesh-woocommerce' ); ?></p>
+					<p class="description"><?php echo esc_html__( 'Only applies when Grouped Add-ons is enabled.', 'synchronity-for-woocommerce' ); ?></p>
 				<?php endif; ?>
 			</td>
 		</tr>
@@ -495,7 +495,7 @@ class AgentMesh_Settings {
 			<th scope="row" class="titledesc"><?php echo esc_html( $field['title'] ?? '' ); ?></th>
 			<td class="forminp">
 				<select name="agentmesh_product_price_field">
-					<option value=""><?php echo esc_html__( '— WooCommerce price (default) —', 'agentmesh-woocommerce' ); ?></option>
+					<option value=""><?php echo esc_html__( '— WooCommerce price (default) —', 'synchronity-for-woocommerce' ); ?></option>
 					<?php
 					foreach ( AgentMesh_ACF_Source::addon_fields() as $f ) {
 						if ( ! in_array( $f['type'], [ 'number', 'text' ], true ) ) {
@@ -565,9 +565,9 @@ class AgentMesh_Settings {
 	 * Copy is a pure client-side clipboard helper.
 	 */
 	public function render_key_actions(): void {
-		$gen_label   = esc_html__( 'Generate new key', 'agentmesh-woocommerce' );
-		$copy_label  = esc_html__( 'Copy', 'agentmesh-woocommerce' );
-		$default_msg = __( 'Click "Generate new key" to mint a fresh key. When this store is already linked to Synchronity, it will be pushed to the gateway automatically.', 'agentmesh-woocommerce' );
+		$gen_label   = esc_html__( 'Generate new key', 'synchronity-for-woocommerce' );
+		$copy_label  = esc_html__( 'Copy', 'synchronity-for-woocommerce' );
+		$default_msg = __( 'Click "Generate new key" to mint a fresh key. When this store is already linked to Synchronity, it will be pushed to the gateway automatically.', 'synchronity-for-woocommerce' );
 		$nonce       = wp_create_nonce( 'agentmesh_rotate_key' );
 		$ajax_url    = esc_url_raw( admin_url( 'admin-ajax.php' ) );
 		?>
@@ -597,7 +597,7 @@ class AgentMesh_Settings {
 			gen.addEventListener('click', function (e) {
 				e.preventDefault();
 				gen.disabled = true;
-				setMsg(<?php echo wp_json_encode( __( 'Generating…', 'agentmesh-woocommerce' ) ); ?>, '');
+				setMsg(<?php echo wp_json_encode( __( 'Generating…', 'synchronity-for-woocommerce' ) ); ?>, '');
 				var body = new URLSearchParams();
 				body.set('action', 'agentmesh_rotate_key');
 				body.set('_wpnonce', nonce);
@@ -622,11 +622,11 @@ class AgentMesh_Settings {
 			cpy.addEventListener('click', function (e) {
 				e.preventDefault();
 				if (!input.value) {
-					setMsg(<?php echo wp_json_encode( __( 'No key to copy. Generate one first.', 'agentmesh-woocommerce' ) ); ?>, 'warn');
+					setMsg(<?php echo wp_json_encode( __( 'No key to copy. Generate one first.', 'synchronity-for-woocommerce' ) ); ?>, 'warn');
 					return;
 				}
-				var done = function () { setMsg(<?php echo wp_json_encode( __( 'Copied to clipboard.', 'agentmesh-woocommerce' ) ); ?>, 'ok'); };
-				var fail = function () { setMsg(<?php echo wp_json_encode( __( 'Copy failed — select the Connector Key field and copy manually.', 'agentmesh-woocommerce' ) ); ?>, 'warn'); };
+				var done = function () { setMsg(<?php echo wp_json_encode( __( 'Copied to clipboard.', 'synchronity-for-woocommerce' ) ); ?>, 'ok'); };
+				var fail = function () { setMsg(<?php echo wp_json_encode( __( 'Copy failed — select the Connector Key field and copy manually.', 'synchronity-for-woocommerce' ) ); ?>, 'warn'); };
 				if (navigator.clipboard && navigator.clipboard.writeText) {
 					navigator.clipboard.writeText(input.value).then(done, fail);
 				} else {
@@ -652,7 +652,7 @@ class AgentMesh_Settings {
 	 */
 	public function ajax_rotate_key(): void {
 		if ( ! current_user_can( 'manage_woocommerce' ) ) {
-			wp_send_json_error( [ 'message' => __( 'Insufficient permissions.', 'agentmesh-woocommerce' ) ], 403 );
+			wp_send_json_error( [ 'message' => __( 'Insufficient permissions.', 'synchronity-for-woocommerce' ) ], 403 );
 		}
 		check_ajax_referer( 'agentmesh_rotate_key', '_wpnonce' );
 
@@ -668,7 +668,7 @@ class AgentMesh_Settings {
 			wp_send_json_success( [
 				'new_key' => $new_key,
 				'pushed'  => false,
-				'message' => __( 'New key generated locally. Paste it into the Synchronity dashboard to complete setup.', 'agentmesh-woocommerce' ),
+				'message' => __( 'New key generated locally. Paste it into the Synchronity dashboard to complete setup.', 'synchronity-for-woocommerce' ),
 			] );
 		}
 
@@ -687,7 +687,7 @@ class AgentMesh_Settings {
 			wp_send_json_error( [
 				'message' => sprintf(
 					/* translators: %s: error message returned by the HTTP client */
-					__( 'Could not reach the Synchronity gateway: %s. The current key is unchanged.', 'agentmesh-woocommerce' ),
+					__( 'Could not reach the Synchronity gateway: %s. The current key is unchanged.', 'synchronity-for-woocommerce' ),
 					$response->get_error_message()
 				),
 			], 502 );
@@ -698,7 +698,7 @@ class AgentMesh_Settings {
 			wp_send_json_error( [
 				'message' => sprintf(
 					/* translators: %d: HTTP status code from the gateway */
-					__( 'Gateway rejected the rotation (HTTP %d). The current key is unchanged.', 'agentmesh-woocommerce' ),
+					__( 'Gateway rejected the rotation (HTTP %d). The current key is unchanged.', 'synchronity-for-woocommerce' ),
 					$code
 				),
 				'gateway_body' => wp_remote_retrieve_body( $response ),
@@ -710,7 +710,7 @@ class AgentMesh_Settings {
 		wp_send_json_success( [
 			'new_key' => $new_key,
 			'pushed'  => true,
-			'message' => __( 'Key rotated and pushed to the Synchronity gateway.', 'agentmesh-woocommerce' ),
+			'message' => __( 'Key rotated and pushed to the Synchronity gateway.', 'synchronity-for-woocommerce' ),
 		] );
 	}
 }
