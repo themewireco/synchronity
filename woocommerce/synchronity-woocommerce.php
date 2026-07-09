@@ -6,7 +6,8 @@
  * Version: 0.4.7
  * Author: Themewire Ltd
  * Author URI: https://themewire.co
- * License: Proprietary
+ * License: GPLv2 or later
+ * License URI: https://www.gnu.org/licenses/gpl-2.0.html
  * Requires at least: 6.0
  * Requires PHP: 8.2
  * WC requires at least: 7.0

@@ -2,10 +2,10 @@
 Contributors: themewireco
 Tags: agentmesh, ai-commerce, woocommerce, ai-agents
 Requires at least: 6.0
-Tested up to: 6.5
+Tested up to: 6.6
 Requires PHP: 8.2
 Stable tag: 0.4.7
-License: Proprietary
+License: GPLv2 or later
 
 Connect your WooCommerce store to the AgentMesh network — enabling AI agents to discover, search, and purchase from your store.
 

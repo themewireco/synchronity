@@ -350,11 +350,7 @@ class AgentMesh_Settings {
 			[
 				'title'    => __( 'Add-on Price Map', 'agentmesh-woocommerce' ),
 				'type'     => 'agentmesh_price_map_builder',
-				'desc'     => __(
-					'Optional. Attach a fee to each priced add-on field: a fixed per-unit fee, a fee per option value, or read the fee from another ACF field. '
-					. 'Amounts are in the store currency. Unmapped add-ons fall back to a repeater price subfield, a <code>(+N)</code>/<code>(-N)</code> label suffix, or free.',
-					'agentmesh-woocommerce'
-				),
+				'desc'     => __( 'Optional. Attach a fee to each priced add-on field: a fixed per-unit fee, a fee per option value, or read the fee from another ACF field. Amounts are in the store currency. Unmapped add-ons fall back to a repeater price subfield, a <code>(+N)</code>/<code>(-N)</code> label suffix, or free.', 'agentmesh-woocommerce' ),
 				'id'       => 'agentmesh_addon_price_map',
 			],
 
