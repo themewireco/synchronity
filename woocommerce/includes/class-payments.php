@@ -1974,13 +1974,14 @@ class AgentMesh_Payments {
 	 * Map a Paystack reference back to a WC order via stored meta.
 	 */
 	private function find_order_by_reference( string $reference ): ?WC_Order {
-		// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key, WordPress.DB.SlowDBQuery.slow_db_query_meta_value
+		// phpcs:disable WordPress.DB.SlowDBQuery
 		$orders = wc_get_orders( [
 			'limit'      => 1,
 			'meta_key'   => '_agentmesh_payment_reference',
 			'meta_value' => $reference,
 			'return'     => 'objects',
 		] );
+		// phpcs:enable WordPress.DB.SlowDBQuery
 
 		if ( is_array( $orders ) && ! empty( $orders ) ) {
 			$order = $orders[0];
