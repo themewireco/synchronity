@@ -485,14 +485,16 @@ class AgentMesh_Paystack_Provider implements AgentMesh_Payment_Provider {
 	 * @param array<string, mixed> $context Safe contextual fields (order_id, provider, phone)
 	 */
 	private function log_paystack_response( string $operation, string $reference, $resp, array $context = [] ): void {
+		$logger = wc_get_logger();
 		if ( is_wp_error( $resp ) ) {
-			error_log(
+			$logger->info(
 				sprintf(
 					'[AgentMesh Paystack] %s ref=%s %s',
 					$operation,
 					$reference,
 					wp_json_encode( array_merge( $context, [ 'error' => $resp->get_error_message() ] ) )
-				)
+				),
+				[ 'source' => 'agentmesh-woocommerce' ]
 			);
 			return;
 		}
@@ -505,13 +507,14 @@ class AgentMesh_Paystack_Provider implements AgentMesh_Payment_Provider {
 			'paystack_message'   => is_array( $resp ) ? ( $resp['message'] ?? null ) : null,
 		];
 
-		error_log(
+		$logger->info(
 			sprintf(
 				'[AgentMesh Paystack] %s ref=%s %s',
 				$operation,
 				$reference,
 				wp_json_encode( array_merge( $context, $safe ) )
-			)
+			),
+			[ 'source' => 'agentmesh-woocommerce' ]
 		);
 	}
 
@@ -844,6 +847,351 @@ class AgentMesh_Stripe_Provider implements AgentMesh_Payment_Provider {
 }
 
 /**
+ * PayPal implementation of {@see AgentMesh_Payment_Provider}.
+ *
+ * Redirect / hosted-approval flow via PayPal Orders v2 (intent=CAPTURE) — the same
+ * UX as Stripe/Paystack card: the buyer taps a link, approves on PayPal, returns.
+ * PayPal's hosted page also offers guest-card, so this advertises the `card` channel
+ * (no mobile money / OTP).
+ *
+ * PCI: never collects/transmits/logs a card PAN/CVV/expiry; PayPal hosts the form.
+ * Amount + currency are ALWAYS derived from the WooCommerce order.
+ */
+class AgentMesh_PayPal_Provider implements AgentMesh_Payment_Provider {
+
+	const LIVE_BASE    = 'https://api-m.paypal.com';
+	const SANDBOX_BASE = 'https://api-m.sandbox.paypal.com';
+
+	/**
+	 * Currencies PayPal settles in. PayPal rejects others (e.g. GHS, NGN), so the
+	 * gateway hides itself from the picker for an unsupported order currency.
+	 * https://developer.paypal.com/api/rest/reference/currency-codes/
+	 */
+	const SUPPORTED_CURRENCIES = [
+		'AUD', 'BRL', 'CAD', 'CHF', 'CZK', 'DKK', 'EUR', 'GBP', 'HKD', 'HUF',
+		'ILS', 'JPY', 'MXN', 'NOK', 'NZD', 'PHP', 'PLN', 'SEK', 'SGD', 'THB',
+		'TWD', 'USD',
+	];
+
+	public function id(): string { return 'paypal'; }
+	public function label(): string { return 'PayPal'; }
+
+	/**
+	 * Resolve PayPal credentials. Prefers the official "WooCommerce PayPal Payments"
+	 * options (`woocommerce-ppcp-settings`: client_id/client_secret + sandbox_on),
+	 * falls back to dedicated `agentmesh_paypal_*` options.
+	 *
+	 * @return array{client_id:string, secret:string, mode:string}
+	 */
+	public function get_keys(): array {
+		$plugin = get_option( 'woocommerce-ppcp-settings', [] );
+		if ( is_array( $plugin ) && ( ! empty( $plugin['client_id'] ) || ! empty( $plugin['client_secret'] ) ) ) {
+			$sandbox = ! empty( $plugin['sandbox_on'] );
+			return [
+				'client_id' => (string) ( $plugin['client_id'] ?? '' ),
+				'secret'    => (string) ( $plugin['client_secret'] ?? '' ),
+				'mode'      => $sandbox ? 'sandbox' : 'live',
+			];
+		}
+
+		$mode = (string) get_option( 'agentmesh_paypal_mode', 'sandbox' );
+		return [
+			'client_id' => (string) get_option( 'agentmesh_paypal_client_id', '' ),
+			'secret'    => (string) get_option( 'agentmesh_paypal_secret', '' ),
+			'mode'      => 'live' === $mode ? 'live' : 'sandbox',
+		];
+	}
+
+	private function api_base(): string {
+		return 'live' === $this->get_keys()['mode'] ? self::LIVE_BASE : self::SANDBOX_BASE;
+	}
+
+	public function is_configured(): bool {
+		$k = $this->get_keys();
+		return '' !== $k['client_id'] && '' !== $k['secret'];
+	}
+
+	public function is_enabled(): bool {
+		// PayPal defaults DISABLED — opt-in via the settings toggle.
+		$toggle = get_option( 'agentmesh_payment_enable_paypal', 'no' );
+		$on     = ! in_array( strtolower( (string) $toggle ), [ 'no', '0', '', 'false' ], true );
+		return $this->is_configured() && $on;
+	}
+
+	public function get_methods( WC_Order $order ): array {
+		$currency = strtoupper( $order->get_currency() );
+		$methods  = in_array( $currency, self::SUPPORTED_CURRENCIES, true ) ? [ 'card' ] : [];
+		return [
+			'methods'                => $methods,
+			'currency'               => $order->get_currency(),
+			'mobile_money_providers' => [],
+		];
+	}
+
+	public function initiate( WC_Order $order, string $channel, array $args ): array {
+		if ( 'card' !== $channel ) {
+			return $this->fail_session( $order, '', $channel, 'PayPal supports redirect checkout only.' );
+		}
+
+		$token = $this->token();
+		if ( is_wp_error( $token ) ) {
+			return $this->fail_session( $order, '', $channel, $token->get_error_message() );
+		}
+
+		$currency = strtoupper( $order->get_currency() );
+		$value    = number_format( (float) $order->get_total(), 2, '.', '' ); // decimal, from the order
+
+		$body = [
+			'intent'         => 'CAPTURE',
+			'purchase_units' => [
+				[
+					'custom_id' => (string) $order->get_id(),
+					'amount'    => [ 'currency_code' => $currency, 'value' => $value ],
+				],
+			],
+			'payment_source' => [
+				'paypal' => [
+					'experience_context' => [
+						'return_url'  => $this->return_url() . '?gateway=paypal',
+						'cancel_url'  => $this->return_url() . '?gateway=paypal&cancel=1',
+						'user_action' => 'PAY_NOW',
+					],
+				],
+			],
+		];
+
+		$resp = $this->api_post( '/v2/checkout/orders', $body, $token );
+		if ( is_wp_error( $resp ) ) {
+			return $this->fail_session( $order, '', $channel, $resp->get_error_message() );
+		}
+
+		$id  = (string) ( $resp['id'] ?? '' );
+		$url = $this->approval_url( $resp );
+		if ( '' === $id || '' === $url ) {
+			return $this->fail_session( $order, $id, $channel, (string) ( $resp['message'] ?? 'Could not initialise PayPal checkout.' ) );
+		}
+
+		$order->update_meta_data( '_agentmesh_payment_reference', $id );
+		$order->update_meta_data( '_agentmesh_payment_channel', $channel );
+		$order->update_meta_data( '_agentmesh_payment_gateway', 'paypal' );
+		$order->save();
+
+		return AgentMesh_Normaliser::payment_session_to_amps( $order, [
+			'reference'         => $id,
+			'channel'           => $channel,
+			'payment_status'    => 'awaiting_user',
+			'authorization_url' => $url,
+			'message'           => 'Tap the link to pay securely with PayPal.',
+		] );
+	}
+
+	public function submit_otp( WC_Order $order, string $reference, string $otp ): array {
+		return $this->fail_session( $order, $reference, 'card', 'PayPal payments do not use OTP.' );
+	}
+
+	public function verify( string $reference ): array {
+		$token = $this->token();
+		if ( is_wp_error( $token ) ) {
+			return [ 'status' => 'unknown', 'amount' => 0.0, 'currency' => '', 'raw' => [] ];
+		}
+
+		$resp = $this->api_get( '/v2/checkout/orders/' . rawurlencode( $reference ), $token );
+		if ( is_wp_error( $resp ) ) {
+			return [ 'status' => 'unknown', 'amount' => 0.0, 'currency' => '', 'raw' => [] ];
+		}
+
+		$status = strtoupper( (string) ( $resp['status'] ?? '' ) );
+
+		// Buyer approved on PayPal but the funds aren't captured yet — capture now
+		// (idempotent: a re-capture returns ORDER_ALREADY_CAPTURED, treated as done).
+		if ( 'APPROVED' === $status ) {
+			$cap = $this->api_post( '/v2/checkout/orders/' . rawurlencode( $reference ) . '/capture', new stdClass(), $token );
+			if ( ! is_wp_error( $cap ) ) {
+				if ( 'COMPLETED' === strtoupper( (string) ( $cap['status'] ?? '' ) ) ) {
+					$resp   = $cap;
+					$status = 'COMPLETED';
+				} elseif ( $this->already_captured( $cap ) ) {
+					$status = 'COMPLETED';
+				}
+			}
+		}
+
+		[ $amount, $currency ] = $this->extract_amount( $resp );
+
+		$mapped = match ( $status ) {
+			'COMPLETED' => 'success',
+			'VOIDED'    => 'failed',
+			default     => 'pending',
+		};
+
+		return [ 'status' => $mapped, 'amount' => $amount, 'currency' => $currency, 'raw' => $resp ];
+	}
+
+	public function parse_webhook( WP_REST_Request $request ): array {
+		$raw     = (string) $request->get_body();
+		$payload = json_decode( $raw, true );
+		$payload = is_array( $payload ) ? $payload : [];
+		$event   = (string) ( $payload['event_type'] ?? '' );
+		$resource = $payload['resource'] ?? [];
+
+		// Our stored reference is the PayPal ORDER id. CHECKOUT.ORDER.* events carry it
+		// as resource.id; PAYMENT.CAPTURE.* events carry it under related_ids.order_id.
+		$reference = (string) (
+			$resource['supplementary_data']['related_ids']['order_id']
+			?? $resource['id']
+			?? ''
+		);
+
+		$amt      = $resource['amount'] ?? [];
+		$amount   = (float) ( $amt['value'] ?? 0 );
+		$currency = strtoupper( (string) ( $amt['currency_code'] ?? '' ) );
+
+		// Authenticity via PayPal's verify-webhook-signature API (needs a configured
+		// webhook id). Unset id → valid:false; verify-on-poll remains the primary path.
+		$webhook_id = (string) get_option( 'agentmesh_paypal_webhook_id', '' );
+		$valid      = false;
+		if ( '' !== $webhook_id && '' !== $raw ) {
+			$token = $this->token();
+			if ( ! is_wp_error( $token ) ) {
+				$verify = $this->api_post( '/v1/notifications/verify-webhook-signature', [
+					'auth_algo'         => (string) $request->get_header( 'paypal-auth-algo' ),
+					'cert_url'          => (string) $request->get_header( 'paypal-cert-url' ),
+					'transmission_id'   => (string) $request->get_header( 'paypal-transmission-id' ),
+					'transmission_sig'  => (string) $request->get_header( 'paypal-transmission-sig' ),
+					'transmission_time' => (string) $request->get_header( 'paypal-transmission-time' ),
+					'webhook_id'        => $webhook_id,
+					'webhook_event'     => $payload,
+				], $token );
+				if ( ! is_wp_error( $verify ) ) {
+					$valid = 'SUCCESS' === strtoupper( (string) ( $verify['verification_status'] ?? '' ) );
+				}
+			}
+		}
+
+		return [
+			'valid'     => $valid,
+			'event'     => $event,
+			'reference' => $reference,
+			'amount'    => $amount,
+			'currency'  => $currency,
+			'raw'       => $payload,
+		];
+	}
+
+	// ── Internal helpers ───────────────────────────────────────────────
+
+	/** First approval link in an Orders v2 response (payer-action on v2, approve legacy). */
+	private function approval_url( array $resp ): string {
+		foreach ( (array) ( $resp['links'] ?? [] ) as $link ) {
+			if ( in_array( (string) ( $link['rel'] ?? '' ), [ 'payer-action', 'approve' ], true ) ) {
+				return (string) ( $link['href'] ?? '' );
+			}
+		}
+		return '';
+	}
+
+	/** True when a capture error body says the order was already captured. */
+	private function already_captured( $body ): bool {
+		if ( ! is_array( $body ) ) {
+			return false;
+		}
+		foreach ( (array) ( $body['details'] ?? [] ) as $d ) {
+			if ( 'ORDER_ALREADY_CAPTURED' === ( $d['issue'] ?? '' ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** [amount, currency] from a captured order / capture response (decimal). */
+	private function extract_amount( array $resp ): array {
+		$pu  = $resp['purchase_units'][0] ?? [];
+		$cap = $pu['payments']['captures'][0]['amount'] ?? null;
+		if ( is_array( $cap ) ) {
+			return [ (float) ( $cap['value'] ?? 0 ), strtoupper( (string) ( $cap['currency_code'] ?? '' ) ) ];
+		}
+		$amt = $pu['amount'] ?? [];
+		return [ (float) ( $amt['value'] ?? 0 ), strtoupper( (string) ( $amt['currency_code'] ?? '' ) ) ];
+	}
+
+	private function return_url(): string {
+		return rest_url( AGENTMESH_REST_NAMESPACE . '/connector/payment/return' );
+	}
+
+	private function fail_session( WC_Order $order, string $reference, string $channel, string $message ): array {
+		return AgentMesh_Normaliser::payment_session_to_amps( $order, [
+			'reference'      => $reference,
+			'channel'        => $channel,
+			'payment_status' => 'failed',
+			'message'        => $message,
+		] );
+	}
+
+	/** OAuth2 client-credentials access token. Returns the token string or WP_Error. */
+	private function token() {
+		$k = $this->get_keys();
+		if ( '' === $k['client_id'] || '' === $k['secret'] ) {
+			return new WP_Error( 'paypal_not_configured', 'PayPal client credentials are not configured.' );
+		}
+		$response = wp_remote_post( $this->api_base() . '/v1/oauth2/token', [
+			'timeout' => 20,
+			'headers' => [
+				'Authorization' => 'Basic ' . base64_encode( $k['client_id'] . ':' . $k['secret'] ),
+				'Content-Type'  => 'application/x-www-form-urlencoded',
+				'Accept'        => 'application/json',
+			],
+			'body'    => http_build_query( [ 'grant_type' => 'client_credentials' ] ),
+		] );
+		$decoded = $this->decode( $response );
+		if ( is_wp_error( $decoded ) ) {
+			return $decoded;
+		}
+		$tok = (string) ( $decoded['access_token'] ?? '' );
+		if ( '' === $tok ) {
+			return new WP_Error( 'paypal_auth_failed', (string) ( $decoded['error_description'] ?? 'PayPal authentication failed.' ) );
+		}
+		return $tok;
+	}
+
+	/** POST JSON to PayPal with a bearer token. Returns decoded body array or WP_Error. */
+	private function api_post( string $path, $body, string $token ) {
+		$response = wp_remote_post( $this->api_base() . $path, [
+			'timeout' => 20,
+			'headers' => [
+				'Authorization' => 'Bearer ' . $token,
+				'Content-Type'  => 'application/json',
+				'Accept'        => 'application/json',
+			],
+			'body'    => wp_json_encode( $body ?: new stdClass() ),
+		] );
+		return $this->decode( $response );
+	}
+
+	/** GET from PayPal with a bearer token. Returns decoded body array or WP_Error. */
+	private function api_get( string $path, string $token ) {
+		$response = wp_remote_get( $this->api_base() . $path, [
+			'timeout' => 20,
+			'headers' => [
+				'Authorization' => 'Bearer ' . $token,
+				'Accept'        => 'application/json',
+			],
+		] );
+		return $this->decode( $response );
+	}
+
+	private function decode( $response ) {
+		if ( is_wp_error( $response ) ) {
+			return new WP_Error( 'paypal_http_error', 'Could not reach PayPal: ' . $response->get_error_message() );
+		}
+		$decoded = json_decode( (string) wp_remote_retrieve_body( $response ), true );
+		if ( ! is_array( $decoded ) ) {
+			return new WP_Error( 'paypal_bad_response', 'Unexpected response from PayPal.' );
+		}
+		return $decoded;
+	}
+}
+
+/**
  * Registry of buyer-payment gateways. Add a gateway by registering its provider
  * here — no route changes needed.
  */
@@ -856,6 +1204,7 @@ class AgentMesh_Payment_Gateways {
 		$this->providers = $providers ?? [
 			new AgentMesh_Paystack_Provider(),
 			new AgentMesh_Stripe_Provider(),
+			new AgentMesh_PayPal_Provider(),
 		];
 	}
 
@@ -986,6 +1335,16 @@ class AgentMesh_Payments {
 				'methods'             => WP_REST_Server::CREATABLE,
 				'callback'            => [ $this, 'handle_stripe_webhook' ],
 				'permission_callback' => '__return_true', // authenticity verified inside via signature
+			]
+		);
+
+		register_rest_route(
+			AGENTMESH_REST_NAMESPACE,
+			'/webhooks/paypal',
+			[
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => [ $this, 'handle_paypal_webhook' ],
+				'permission_callback' => '__return_true', // authenticity verified inside via PayPal API
 			]
 		);
 
@@ -1291,6 +1650,47 @@ class AgentMesh_Payments {
 	}
 
 	// ─────────────────────────────────────────────────────────────────
+	// POST /webhooks/paypal
+	// ─────────────────────────────────────────────────────────────────
+
+	public function handle_paypal_webhook( WP_REST_Request $request ): WP_REST_Response {
+		$provider = $this->gateways->get( 'paypal' ) ?: new AgentMesh_PayPal_Provider();
+		$parsed   = $provider->parse_webhook( $request );
+
+		if ( empty( $parsed['valid'] ) ) {
+			$r = new WP_REST_Response( AgentMesh_Auth::error_response( 'FORBIDDEN', 'Invalid PayPal signature.' ), 401 );
+			return AgentMesh_Auth::echo_request_id( $request, $r );
+		}
+
+		$reference = (string) $parsed['reference'];
+		if ( '' === $reference ) {
+			$r = new WP_REST_Response( AgentMesh_Auth::error_response( 'INVALID_REQUEST', 'Missing reference in webhook.' ), 400 );
+			return AgentMesh_Auth::echo_request_id( $request, $r );
+		}
+
+		$order = $this->find_order_by_reference( $reference );
+		if ( ! $order ) {
+			$response = new WP_REST_Response( [ 'received' => true ], 200 );
+			return AgentMesh_Auth::echo_request_id( $request, $response );
+		}
+
+		if ( '' === (string) $order->get_meta( '_agentmesh_payment_gateway' ) ) {
+			$order->update_meta_data( '_agentmesh_payment_gateway', 'paypal' );
+			$order->save();
+		}
+
+		$event = (string) $parsed['event'];
+		if ( in_array( $event, [ 'PAYMENT.CAPTURE.COMPLETED', 'CHECKOUT.ORDER.COMPLETED' ], true ) ) {
+			$this->advance_order_paid( $order, $reference, (float) $parsed['amount'], (string) $parsed['currency'] );
+		} elseif ( in_array( $event, [ 'PAYMENT.CAPTURE.DENIED', 'PAYMENT.CAPTURE.DECLINED', 'CHECKOUT.ORDER.VOIDED' ], true ) ) {
+			$this->advance_order_failed( $order, $reference );
+		}
+
+		$response = new WP_REST_Response( [ 'received' => true ], 200 );
+		return AgentMesh_Auth::echo_request_id( $request, $response );
+	}
+
+	// ─────────────────────────────────────────────────────────────────
 	// GET /connector/payment/return  (card browser landing)
 	// ─────────────────────────────────────────────────────────────────
 
@@ -1302,8 +1702,9 @@ class AgentMesh_Payments {
 	public function handle_return( WP_REST_Request $request ): void {
 		// Paystack returns ?reference=…&trxref=…; Stripe returns ?session_id=… (the
 		// Checkout Session id, which is the stored payment reference).
+		// Paystack: ?reference=&trxref= · Stripe: ?session_id= · PayPal: ?token= (the order id).
 		$reference = sanitize_text_field(
-			(string) ( $request->get_param( 'reference' ) ?: $request->get_param( 'trxref' ) ?: $request->get_param( 'session_id' ) ?: '' )
+			(string) ( $request->get_param( 'reference' ) ?: $request->get_param( 'trxref' ) ?: $request->get_param( 'session_id' ) ?: $request->get_param( 'token' ) ?: '' )
 		);
 
 		$result = $this->resolve_return( $reference );
@@ -1375,22 +1776,20 @@ class AgentMesh_Payments {
 		$title = esc_html( $title );
 		$body  = esc_html( $body );
 
-		return <<<HTML
-<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{$title}</title>
-<style>
-  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;margin:0;
-    display:flex;min-height:100vh;align-items:center;justify-content:center;background:#f8fafc;color:#0f172a}
-  .card{max-width:420px;padding:40px 32px;text-align:center;background:#fff;border-radius:16px;
-    box-shadow:0 10px 30px rgba(2,6,23,.08);margin:16px}
-  .dot{width:56px;height:56px;border-radius:50%;background:{$accent};margin:0 auto 20px;
-    display:flex;align-items:center;justify-content:center;color:#fff;font-size:28px;line-height:1}
-  h1{font-size:20px;margin:0 0 10px}p{font-size:15px;line-height:1.5;color:#475569;margin:0}
-</style></head>
-<body><div class="card"><div class="dot">•</div><h1>{$title}</h1><p>{$body}</p></div></body></html>
-HTML;
+		return "<!doctype html>\n" .
+			"<html lang=\"en\"><head><meta charset=\"utf-8\">\n" .
+			"<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n" .
+			"<title>" . $title . "</title>\n" .
+			"<style>\n" .
+			"  body{font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,sans-serif;margin:0;\n" .
+			"    display:flex;min-height:100vh;align-items:center;justify-content:center;background:#f8fafc;color:#0f172a}\n" .
+			"  .card{max-width:420px;padding:40px 32px;text-align:center;background:#fff;border-radius:16px;\n" .
+			"    box-shadow:0 10px 30px rgba(2,6,23,.08);margin:16px}\n" .
+			"  .dot{width:56px;height:56px;border-radius:50%;background:" . esc_attr( $accent ) . ";margin:0 auto 20px;\n" .
+			"    display:flex;align-items:center;justify-content:center;color:#fff;font-size:28px;line-height:1}\n" .
+			"  h1{font-size:20px;margin:0 0 10px}p{font-size:15px;line-height:1.5;color:#475569;margin:0}\n" .
+			"</style></head>\n" .
+			"<body><div class=\"card\"><div class=\"dot\">•</div><h1>" . $title . "</h1><p>" . $body . "</p></div></body></html>";
 	}
 
 	// ─────────────────────────────────────────────────────────────────
@@ -1473,7 +1872,7 @@ HTML;
 	 * to that class's private API).
 	 */
 	private function notify_gateway( WC_Order $order, string $event, string $reference ): void {
-		$gateway_url = get_option( 'agentmesh_gateway_url', '' );
+		$gateway_url = get_option( 'agentmesh_gateway_url', 'https://api.synchronity.app' );
 		if ( empty( $gateway_url ) ) {
 			return;
 		}
@@ -1575,6 +1974,7 @@ HTML;
 	 * Map a Paystack reference back to a WC order via stored meta.
 	 */
 	private function find_order_by_reference( string $reference ): ?WC_Order {
+		// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key, WordPress.DB.SlowDBQuery.slow_db_query_meta_value
 		$orders = wc_get_orders( [
 			'limit'      => 1,
 			'meta_key'   => '_agentmesh_payment_reference',

@@ -1,10 +1,10 @@
-=== AgentMesh for WooCommerce ===
-Contributors: themewire
+=== Synchronity for WooCommerce ===
+Contributors: themewireco
 Tags: agentmesh, ai-commerce, woocommerce, ai-agents
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 8.2
-Stable tag: 0.4.2
+Stable tag: 0.4.7
 License: Proprietary
 
 Connect your WooCommerce store to the AgentMesh network — enabling AI agents to discover, search, and purchase from your store.
@@ -38,6 +38,9 @@ AgentMesh is an AI agentic commerce infrastructure layer. It normalises your Woo
 Yes — WooCommerce 7.0 or higher must be installed and active.
 
 == Changelog ==
+
+= 0.4.7 =
+* New: PayPal as a selectable in-chat payment gateway (PayPal-hosted redirect via Orders v2, captures on return/poll). Credentials read from the WooCommerce PayPal Payments plugin when present. Enable under Inline Payments (PayPal); shown only for PayPal-supported currencies.
 
 = 0.4.2 =
 * Fix: after a successful card payment, buyers are now redirected to WooCommerce's own order-received (thank-you) page instead of the connector's minimal "Payment received" landing. Failed/pending/unsettled states keep the landing page

@@ -117,10 +117,27 @@ export function bootOpenAi(root: HTMLElement, render: (model: CardModel, ctx: Vi
   const paintModel = (model: unknown) => {
     if (model && typeof model === 'object') render(model as CardModel, ctx);
   };
-  const paint = () => paintModel(window.openai?.toolOutput);
 
-  // Re-render whenever the host pushes new globals (e.g. updated toolOutput),
-  // and re-apply theme/locale in case they changed.
+  // Repaint from `toolOutput` only when it ACTUALLY changes. ChatGPT fires
+  // `openai:set_globals` after every widget-initiated callTool — including the ones
+  // that navigate the View in place (cart icon → get_cart, variant "Add" →
+  // get_product). Those events still carry the toolOutput of the tool that MOUNTED
+  // this component (e.g. search_products → productList), so an unconditional repaint
+  // would clobber the cart/wizard that `onResult` just rendered and snap back to the
+  // product list. Dedupe by a content signature so only a genuinely new tool output
+  // repaints; an in-View navigation survives the spurious set_globals.
+  let lastOutputSig: string | undefined;
+  const sigOf = (m: unknown) => { try { return JSON.stringify(m); } catch { return String(m); } };
+  const paint = () => {
+    const out = window.openai?.toolOutput;
+    const sig = sigOf(out);
+    if (sig === lastOutputSig) return;
+    lastOutputSig = sig;
+    paintModel(out);
+  };
+
+  // Re-apply theme/locale on every set_globals, but only repaint on a real
+  // toolOutput change (see paint() dedupe above).
   window.addEventListener('openai:set_globals', () => { applyHostChrome(); paint(); });
 
   // Modern ChatGPT delivers the tool result over the MCP-Apps bridge

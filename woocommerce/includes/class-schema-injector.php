@@ -174,7 +174,7 @@ class AgentMesh_Schema_Injector {
 	 * @return array|null Schema array or null on error
 	 */
 	private function fetch_schema_from_gateway(): ?array {
-		$gateway_url = get_option( 'agentmesh_gateway_url' );
+		$gateway_url = get_option( 'agentmesh_gateway_url', 'https://api.synchronity.app' );
 
 		if ( empty( $gateway_url ) ) {
 			return null;

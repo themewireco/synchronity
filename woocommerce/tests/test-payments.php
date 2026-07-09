@@ -373,4 +373,134 @@ class PaymentsTest extends TestCase {
 		$session = AgentMesh_Normaliser::payment_session_to_amps( $o, [ 'channel' => 'mobile_money', 'payment_status' => 'paid' ] );
 		$this->assertArrayNotHasKey( 'instruction', $session );
 	}
+
+	// ── PayPal provider ─────────────────────────────────────────
+
+	private function enable_paypal(): void {
+		global $_agentmesh_options;
+		$_agentmesh_options['agentmesh_payment_enable_paypal'] = 'yes';
+		$_agentmesh_options['agentmesh_paypal_mode']           = 'sandbox';
+		$_agentmesh_options['agentmesh_paypal_client_id']      = 'cid_test';
+		$_agentmesh_options['agentmesh_paypal_secret']         = 'csec_test';
+	}
+
+	public function test_paypal_methods_supported_currency(): void {
+		$this->enable_paypal();
+		$o = new WC_Order( 100, 25.0, 'USD' );
+		$m = ( new AgentMesh_PayPal_Provider() )->get_methods( $o );
+		$this->assertSame( [ 'card' ], $m['methods'] );
+	}
+
+	public function test_paypal_methods_hidden_for_unsupported_currency(): void {
+		$this->enable_paypal();
+		$o = new WC_Order( 101, 25.0, 'GHS' );
+		$m = ( new AgentMesh_PayPal_Provider() )->get_methods( $o );
+		$this->assertSame( [], $m['methods'] );
+	}
+
+	public function test_paypal_is_enabled_requires_keys_and_toggle(): void {
+		$p = new AgentMesh_PayPal_Provider();
+		$this->assertFalse( $p->is_enabled() ); // off by default, no keys
+		$this->enable_paypal();
+		$this->assertTrue( ( new AgentMesh_PayPal_Provider() )->is_enabled() );
+	}
+
+	public function test_paypal_initiate_returns_authorization_url(): void {
+		$this->enable_paypal();
+		$this->order( 110, 30.0, 'USD' );
+		// 1) OAuth token, 2) create order
+		$this->queue( [ 'access_token' => 'A123', 'token_type' => 'Bearer' ] );
+		$this->queue( [
+			'id'     => 'PPORDER1',
+			'status' => 'PAYER_ACTION_REQUIRED',
+			'links'  => [
+				[ 'rel' => 'self', 'href' => 'https://api/x' ],
+				[ 'rel' => 'payer-action', 'href' => 'https://www.paypal.com/checkoutnow?token=PPORDER1' ],
+			],
+		] );
+		$data = ( new AgentMesh_Payments() )->initiate( $this->req( [ 'order_id' => 110, 'channel' => 'card', 'gateway' => 'paypal' ] ) )->get_data();
+		$this->assertSame( 'awaiting_user', $data['payment_status'] );
+		$this->assertSame( 'redirect', $data['instruction']['action'] );
+		$this->assertSame( 'https://www.paypal.com/checkoutnow?token=PPORDER1', $data['instruction']['authorization_url'] );
+		$o = wc_get_order( 110 );
+		$this->assertSame( 'PPORDER1', $o->get_meta( '_agentmesh_payment_reference' ) );
+		$this->assertSame( 'paypal', $o->get_meta( '_agentmesh_payment_gateway' ) );
+		// OAuth call used Basic auth; create-order call posted decimal value.
+		$this->assertStringContainsString( 'Basic ', $GLOBALS['_http_calls'][0]['args']['headers']['Authorization'] );
+		$sent = json_decode( $GLOBALS['_http_calls'][1]['args']['body'], true );
+		$this->assertSame( '30.00', $sent['purchase_units'][0]['amount']['value'] );
+		$this->assertSame( 'USD', $sent['purchase_units'][0]['amount']['currency_code'] );
+	}
+
+	public function test_paypal_verify_completed_is_success(): void {
+		$this->enable_paypal();
+		$this->queue( [ 'access_token' => 'A123' ] );
+		$this->queue( [
+			'id'             => 'PPORDER2',
+			'status'         => 'COMPLETED',
+			'purchase_units' => [ [ 'payments' => [ 'captures' => [ [ 'amount' => [ 'value' => '40.00', 'currency_code' => 'USD' ] ] ] ] ] ],
+		] );
+		$v = ( new AgentMesh_PayPal_Provider() )->verify( 'PPORDER2' );
+		$this->assertSame( 'success', $v['status'] );
+		$this->assertSame( 40.0, $v['amount'] );
+		$this->assertSame( 'USD', $v['currency'] );
+	}
+
+	public function test_paypal_verify_approved_triggers_capture(): void {
+		$this->enable_paypal();
+		$this->queue( [ 'access_token' => 'A123' ] );                                   // token
+		$this->queue( [ 'id' => 'PPORDER3', 'status' => 'APPROVED' ] );                 // GET order
+		$this->queue( [                                                                // capture
+			'id'             => 'PPORDER3',
+			'status'         => 'COMPLETED',
+			'purchase_units' => [ [ 'payments' => [ 'captures' => [ [ 'amount' => [ 'value' => '12.50', 'currency_code' => 'USD' ] ] ] ] ] ],
+		] );
+		$v = ( new AgentMesh_PayPal_Provider() )->verify( 'PPORDER3' );
+		$this->assertSame( 'success', $v['status'] );
+		$this->assertSame( 12.5, $v['amount'] );
+		$this->assertStringContainsString( '/v2/checkout/orders/PPORDER3/capture', $GLOBALS['_http_calls'][2]['url'] );
+	}
+
+	public function test_paypal_verify_already_captured_is_success(): void {
+		$this->enable_paypal();
+		$this->queue( [ 'access_token' => 'A123' ] );
+		$this->queue( [
+			'id'             => 'PPORDER4',
+			'status'         => 'APPROVED',
+			'purchase_units' => [ [ 'amount' => [ 'value' => '9.00', 'currency_code' => 'USD' ] ] ],
+		] );
+		$this->queue( [ 'name' => 'UNPROCESSABLE_ENTITY', 'details' => [ [ 'issue' => 'ORDER_ALREADY_CAPTURED' ] ] ], 422 );
+		$v = ( new AgentMesh_PayPal_Provider() )->verify( 'PPORDER4' );
+		$this->assertSame( 'success', $v['status'] );
+		$this->assertSame( 9.0, $v['amount'] );
+	}
+
+	public function test_paypal_verify_voided_is_failed(): void {
+		$this->enable_paypal();
+		$this->queue( [ 'access_token' => 'A123' ] );
+		$this->queue( [ 'id' => 'PPORDER5', 'status' => 'VOIDED' ] );
+		$v = ( new AgentMesh_PayPal_Provider() )->verify( 'PPORDER5' );
+		$this->assertSame( 'failed', $v['status'] );
+	}
+
+	public function test_paypal_keys_prefer_ppcp_plugin_options(): void {
+		global $_agentmesh_options;
+		$_agentmesh_options['woocommerce-ppcp-settings'] = [
+			'client_id'     => 'cid_PLUGIN',
+			'client_secret' => 'csec_PLUGIN',
+			'sandbox_on'    => false,
+		];
+		$keys = ( new AgentMesh_PayPal_Provider() )->get_keys();
+		$this->assertSame( 'live', $keys['mode'] );
+		$this->assertSame( 'cid_PLUGIN', $keys['client_id'] );
+		$this->assertSame( 'csec_PLUGIN', $keys['secret'] );
+	}
+
+	public function test_paypal_registry_resolves_when_enabled(): void {
+		$this->enable_paypal();
+		$gw = new AgentMesh_Payment_Gateways();
+		$this->assertNotNull( $gw->get( 'paypal' ) );
+		$ids = array_map( fn( $p ) => $p->id(), $gw->enabled() );
+		$this->assertContains( 'paypal', $ids );
+	}
 }

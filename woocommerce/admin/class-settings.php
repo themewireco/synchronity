@@ -49,25 +49,65 @@ class AgentMesh_Settings {
 	}
 
 	public function save_settings(): void {
+		// Verify settings page nonce.
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing
+		if ( ! isset( $_POST['_wpnonce'] ) || ! wp_verify_nonce( sanitize_key( $_POST['_wpnonce'] ), 'woocommerce-settings' ) ) {
+			return;
+		}
+
 		WC_Admin_Settings::save_fields( $this->get_settings() );
 
 		// The custom add-on field types below are not handled by save_fields().
 
 		// Price map: the hidden input carries JSON serialized by the builder JS.
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 		if ( isset( $_POST['agentmesh_addon_price_map'] ) ) {
+			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 			$raw     = wp_unslash( $_POST['agentmesh_addon_price_map'] );
 			$decoded = json_decode( (string) $raw, true );
-			update_option( 'agentmesh_addon_price_map', is_array( $decoded ) ? wp_json_encode( $decoded ) : '' );
+			if ( is_array( $decoded ) ) {
+				$sanitized = [];
+				foreach ( $decoded as $field => $cfg ) {
+					$clean_field = sanitize_text_field( $field );
+					if ( is_array( $cfg ) ) {
+						$clean_cfg = [];
+						if ( isset( $cfg['amount'] ) ) {
+							$clean_cfg['amount'] = sanitize_text_field( $cfg['amount'] );
+						}
+						if ( isset( $cfg['options'] ) && is_array( $cfg['options'] ) ) {
+							$clean_opts = [];
+							foreach ( $cfg['options'] as $v => $a ) {
+								$clean_opts[ sanitize_text_field( $v ) ] = sanitize_text_field( $a );
+							}
+							$clean_cfg['options'] = $clean_opts;
+						}
+						if ( isset( $cfg['price_field'] ) ) {
+							$clean_cfg['price_field'] = sanitize_text_field( $cfg['price_field'] );
+						}
+						$sanitized[ $clean_field ] = $clean_cfg;
+					}
+				}
+				update_option( 'agentmesh_addon_price_map', wp_json_encode( $sanitized ) );
+			} else {
+				update_option( 'agentmesh_addon_price_map', '' );
+			}
 		}
 
 		// Multiselects post arrays; store as comma-joined CSV (read side splits on comma/newline).
 		foreach ( [ 'agentmesh_addon_hidden_fields', 'agentmesh_addon_multi_groups' ] as $opt ) {
+			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 			$vals  = isset( $_POST[ $opt ] ) ? (array) wp_unslash( $_POST[ $opt ] ) : [];
-			$clean = array_values( array_filter( array_map( 'sanitize_text_field', $vals ), 'strlen' ) );
+			$clean = [];
+			foreach ( $vals as $val ) {
+				$clean[] = sanitize_text_field( $val );
+			}
+			$clean = array_values( array_filter( $clean, 'strlen' ) );
 			update_option( $opt, implode( ', ', $clean ) );
 		}
 
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 		if ( isset( $_POST['agentmesh_product_price_field'] ) ) {
+			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 			update_option( 'agentmesh_product_price_field', sanitize_text_field( wp_unslash( $_POST['agentmesh_product_price_field'] ) ) );
 		}
 	}
@@ -103,6 +143,7 @@ class AgentMesh_Settings {
 				'type'        => 'url',
 				'desc'        => __( 'The base URL of your Synchronity Gateway instance (e.g. https://api.synchronity.app).', 'agentmesh-woocommerce' ),
 				'id'          => 'agentmesh_gateway_url',
+				'default'     => 'https://api.synchronity.app',
 				'placeholder' => 'https://api.synchronity.app',
 				'css'         => 'min-width:350px;',
 			],
@@ -234,6 +275,44 @@ class AgentMesh_Settings {
 			[
 				'type' => 'sectionend',
 				'id'   => 'agentmesh_stripe_section',
+			],
+
+			[
+				'title' => __( 'Inline Payments (PayPal)', 'agentmesh-woocommerce' ),
+				'type'  => 'title',
+				'desc'  => __( 'Let AI agents pay via a PayPal-hosted secure page (PayPal balance or guest card). Credentials are read automatically from your WooCommerce PayPal Payments plugin when present.', 'agentmesh-woocommerce' ),
+				'id'    => 'agentmesh_paypal_section',
+			],
+
+			[
+				'title'   => __( 'Enable PayPal', 'agentmesh-woocommerce' ),
+				'type'    => 'checkbox',
+				'desc'    => __( 'Offer PayPal payments via a PayPal-hosted secure page (no card details touch the chat). Shown only for PayPal-supported currencies.', 'agentmesh-woocommerce' ),
+				'id'      => 'agentmesh_payment_enable_paypal',
+				'default' => 'no',
+			],
+
+			[
+				'title'    => __( 'PayPal Webhook URL', 'agentmesh-woocommerce' ),
+				'type'     => 'text',
+				'desc'     => __( 'Add this URL as a webhook in your PayPal developer dashboard (events: PAYMENT.CAPTURE.COMPLETED, PAYMENT.CAPTURE.DENIED), then paste its Webhook ID below.', 'agentmesh-woocommerce' ),
+				'id'       => 'agentmesh_paypal_webhook_url_display',
+				'value'    => $this->get_paypal_webhook_url(),
+				'custom_attributes' => [ 'readonly' => 'readonly' ],
+				'css'      => 'min-width:450px;background:#f6f7f7;',
+			],
+
+			[
+				'title'   => __( 'PayPal Webhook ID', 'agentmesh-woocommerce' ),
+				'type'    => 'text',
+				'desc'    => __( 'Optional. The Webhook ID from your PayPal app (Webhooks). Leave blank to rely on payment-status polling; provide it for faster webhook-driven confirmation.', 'agentmesh-woocommerce' ),
+				'id'      => 'agentmesh_paypal_webhook_id',
+				'default' => '',
+			],
+
+			[
+				'type' => 'sectionend',
+				'id'   => 'agentmesh_paypal_section',
 			],
 
 			// ── Product Add-ons (ACF) ───────────────────────────────────
@@ -466,6 +545,17 @@ class AgentMesh_Settings {
 	}
 
 	/**
+	 * The connector-owned PayPal webhook URL the merchant registers in their
+	 * PayPal developer dashboard (events: PAYMENT.CAPTURE.COMPLETED/DENIED).
+	 */
+	private function get_paypal_webhook_url(): string {
+		$base = function_exists( 'get_rest_url' )
+			? get_rest_url( null, AGENTMESH_REST_NAMESPACE . '/webhooks/paypal' )
+			: trailingslashit( get_site_url() ) . 'wp-json/' . AGENTMESH_REST_NAMESPACE . '/webhooks/paypal';
+		return $base;
+	}
+
+	/**
 	 * Render the Generate + Copy buttons below the Connector Key input.
 	 *
 	 * Generate kicks off an AJAX call to {@see ajax_rotate_key()}, which:
@@ -488,8 +578,8 @@ class AgentMesh_Settings {
 		<tr valign="top">
 			<th scope="row" class="titledesc">&nbsp;</th>
 			<td class="forminp">
-				<button type="button" class="button" id="agentmesh_generate_key"><?php echo $gen_label; ?></button>
-				<button type="button" class="button" id="agentmesh_copy_key"><?php echo $copy_label; ?></button>
+				<button type="button" class="button" id="agentmesh_generate_key"><?php echo esc_html( $gen_label ); ?></button>
+				<button type="button" class="button" id="agentmesh_copy_key"><?php echo esc_html( $copy_label ); ?></button>
 				<p class="description" id="agentmesh_key_feedback"><?php echo esc_html( $default_msg ); ?></p>
 			</td>
 		</tr>
@@ -572,7 +662,7 @@ class AgentMesh_Settings {
 
 		$new_key     = 'amck_' . bin2hex( random_bytes( 32 ) );
 		$current_key = (string) get_option( 'agentmesh_connector_key', '' );
-		$gateway_url = rtrim( (string) get_option( 'agentmesh_gateway_url', '' ), '/' );
+		$gateway_url = rtrim( (string) get_option( 'agentmesh_gateway_url', 'https://api.synchronity.app' ), '/' );
 		$site_id     = (string) get_option( 'agentmesh_site_id', '' );
 
 		$linked = $current_key !== '' && $gateway_url !== '' && $site_id !== '';
