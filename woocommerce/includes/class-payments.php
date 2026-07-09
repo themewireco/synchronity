@@ -494,7 +494,7 @@ class AgentMesh_Paystack_Provider implements AgentMesh_Payment_Provider {
 					$reference,
 					wp_json_encode( array_merge( $context, [ 'error' => $resp->get_error_message() ] ) )
 				),
-				[ 'source' => 'agentmesh-woocommerce' ]
+				[ 'source' => 'synchronity-for-woocommerce' ]
 			);
 			return;
 		}
@@ -514,7 +514,7 @@ class AgentMesh_Paystack_Provider implements AgentMesh_Payment_Provider {
 				$reference,
 				wp_json_encode( array_merge( $context, $safe ) )
 			),
-			[ 'source' => 'agentmesh-woocommerce' ]
+			[ 'source' => 'synchronity-for-woocommerce' ]
 		);
 	}
 

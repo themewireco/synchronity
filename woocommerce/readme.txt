@@ -24,7 +24,7 @@ AgentMesh for WooCommerce implements the AgentMesh Connector Interface, exposing
 
 == Installation ==
 
-1. Upload the plugin to `/wp-content/plugins/agentmesh-woocommerce/`
+1. Upload the plugin to `/wp-content/plugins/synchronity-for-woocommerce/`
 2. Activate the plugin via the 'Plugins' menu in WordPress
 3. Navigate to WooCommerce → Settings → AgentMesh
 4. Enter your AgentMesh Gateway URL and Connector Key

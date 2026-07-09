@@ -16,16 +16,16 @@ $agentmesh_read_only     = get_option( 'agentmesh_read_only', false );
 $agentmesh_api_base      = get_site_url() . '/wp-json/agentmesh/v1';
 ?>
 <div class="wrap agentmesh-settings">
-	<h1><?php esc_html_e( 'Synchronity for WooCommerce', 'agentmesh-woocommerce' ); ?></h1>
+	<h1><?php esc_html_e( 'Synchronity for WooCommerce', 'synchronity-for-woocommerce' ); ?></h1>
 	<p class="description">
-		<?php esc_html_e( 'Configure your Synchronity connection. Your connector API is available at:', 'agentmesh-woocommerce' ); ?>
+		<?php esc_html_e( 'Configure your Synchronity connection. Your connector API is available at:', 'synchronity-for-woocommerce' ); ?>
 		<code><?php echo esc_url( $agentmesh_api_base ); ?></code>
 	</p>
 
 	<?php if ( $agentmesh_site_id ) : ?>
 	<div class="notice notice-info inline">
 		<p>
-			<strong><?php esc_html_e( 'Site ID:', 'agentmesh-woocommerce' ); ?></strong>
+			<strong><?php esc_html_e( 'Site ID:', 'synchronity-for-woocommerce' ); ?></strong>
 			<code><?php echo esc_html( $agentmesh_site_id ); ?></code>
 		</p>
 	</div>
@@ -37,59 +37,59 @@ $agentmesh_api_base      = get_site_url() . '/wp-json/agentmesh/v1';
 		<table class="form-table" role="presentation">
 			<tr>
 				<th scope="row">
-					<label for="agentmesh_enabled"><?php esc_html_e( 'Enable Synchronity', 'agentmesh-woocommerce' ); ?></label>
+					<label for="agentmesh_enabled"><?php esc_html_e( 'Enable Synchronity', 'synchronity-for-woocommerce' ); ?></label>
 				</th>
 				<td>
 					<input type="checkbox" id="agentmesh_enabled" name="agentmesh_enabled" value="1"
 						<?php checked( $agentmesh_enabled ); ?> />
-					<p class="description"><?php esc_html_e( 'Enable the Synchronity connector REST API.', 'agentmesh-woocommerce' ); ?></p>
+					<p class="description"><?php esc_html_e( 'Enable the Synchronity connector REST API.', 'synchronity-for-woocommerce' ); ?></p>
 				</td>
 			</tr>
 			<tr>
 				<th scope="row">
-					<label for="agentmesh_gateway_url"><?php esc_html_e( 'Gateway URL', 'agentmesh-woocommerce' ); ?></label>
+					<label for="agentmesh_gateway_url"><?php esc_html_e( 'Gateway URL', 'synchronity-for-woocommerce' ); ?></label>
 				</th>
 				<td>
 					<input type="url" id="agentmesh_gateway_url" name="agentmesh_gateway_url"
 						value="<?php echo esc_url( $agentmesh_gateway_url ); ?>" class="regular-text" placeholder="https://api.synchronity.app" />
-					<p class="description"><?php esc_html_e( 'Base URL of the Synchronity Gateway.', 'agentmesh-woocommerce' ); ?></p>
+					<p class="description"><?php esc_html_e( 'Base URL of the Synchronity Gateway.', 'synchronity-for-woocommerce' ); ?></p>
 				</td>
 			</tr>
 			<tr>
 				<th scope="row">
-					<label for="agentmesh_connector_key"><?php esc_html_e( 'Connector Key', 'agentmesh-woocommerce' ); ?></label>
+					<label for="agentmesh_connector_key"><?php esc_html_e( 'Connector Key', 'synchronity-for-woocommerce' ); ?></label>
 				</th>
 				<td>
 					<input type="password" id="agentmesh_connector_key" name="agentmesh_connector_key"
 						value="<?php echo esc_attr( $agentmesh_connector_key ); ?>" class="regular-text" autocomplete="off" />
-					<p class="description"><?php esc_html_e( 'Shared secret key from your Synchronity dashboard.', 'agentmesh-woocommerce' ); ?></p>
+					<p class="description"><?php esc_html_e( 'Shared secret key from your Synchronity dashboard.', 'synchronity-for-woocommerce' ); ?></p>
 				</td>
 			</tr>
 		</table>
 
-		<h2><?php esc_html_e( 'Permissions', 'agentmesh-woocommerce' ); ?></h2>
+		<h2><?php esc_html_e( 'Permissions', 'synchronity-for-woocommerce' ); ?></h2>
 		<table class="form-table" role="presentation">
 			<tr>
-				<th scope="row"><?php esc_html_e( 'Allow Cart Management', 'agentmesh-woocommerce' ); ?></th>
+				<th scope="row"><?php esc_html_e( 'Allow Cart Management', 'synchronity-for-woocommerce' ); ?></th>
 				<td>
 					<input type="checkbox" name="agentmesh_allow_cart" value="1" <?php checked( $agentmesh_allow_cart ); ?> />
 				</td>
 			</tr>
 			<tr>
-				<th scope="row"><?php esc_html_e( 'Allow Checkout Execution', 'agentmesh-woocommerce' ); ?></th>
+				<th scope="row"><?php esc_html_e( 'Allow Checkout Execution', 'synchronity-for-woocommerce' ); ?></th>
 				<td>
 					<input type="checkbox" name="agentmesh_allow_checkout" value="1" <?php checked( $agentmesh_allow_checkout ); ?> />
 				</td>
 			</tr>
 			<tr>
-				<th scope="row"><?php esc_html_e( 'Read-Only Mode', 'agentmesh-woocommerce' ); ?></th>
+				<th scope="row"><?php esc_html_e( 'Read-Only Mode', 'synchronity-for-woocommerce' ); ?></th>
 				<td>
 					<input type="checkbox" name="agentmesh_read_only" value="1" <?php checked( $agentmesh_read_only ); ?> />
-					<p class="description"><?php esc_html_e( 'Restrict to product/manifest reads only.', 'agentmesh-woocommerce' ); ?></p>
+					<p class="description"><?php esc_html_e( 'Restrict to product/manifest reads only.', 'synchronity-for-woocommerce' ); ?></p>
 				</td>
 			</tr>
 		</table>
 
-		<?php submit_button( __( 'Save Settings', 'agentmesh-woocommerce' ) ); ?>
+		<?php submit_button( __( 'Save Settings', 'synchronity-for-woocommerce' ) ); ?>
 	</form>
 </div>

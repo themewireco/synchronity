@@ -28,7 +28,7 @@ function agentmesh_check_dependencies(): void {
 	if ( ! class_exists( 'WooCommerce' ) ) {
 		add_action( 'admin_notices', function () {
 			echo '<div class="notice notice-error"><p>'
-				. esc_html__( 'Synchronity for WooCommerce requires WooCommerce to be installed and active.', 'agentmesh-woocommerce' )
+				. esc_html__( 'Synchronity for WooCommerce requires WooCommerce to be installed and active.', 'synchronity-for-woocommerce' )
 				. '</p></div>';
 		} );
 		return;
