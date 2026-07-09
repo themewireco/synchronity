@@ -130,9 +130,10 @@ class AgentMesh_Checkout {
 		$pay_url      = add_query_arg( 'key', $order_key, $pay_url );
 
 		// Debug: Log the generated URLs
-		error_log( 'Synchronity Checkout Debug: checkout_url=' . $checkout_url );
-		error_log( 'Synchronity Checkout Debug: order_id=' . $order->get_id() );
-		error_log( 'Synchronity Checkout Debug: pay_url=' . $pay_url );
+		$logger = wc_get_logger();
+		$logger->debug( 'checkout_url=' . $checkout_url, [ 'source' => 'agentmesh-woocommerce' ] );
+		$logger->debug( 'order_id=' . $order->get_id(), [ 'source' => 'agentmesh-woocommerce' ] );
+		$logger->debug( 'pay_url=' . $pay_url, [ 'source' => 'agentmesh-woocommerce' ] );
 
 		// Set order to pending payment (customer needs to complete payment on checkout page)
 		// Save payment_url and agent info to metadata FIRST (before normalizer reads it)
@@ -170,7 +171,7 @@ class AgentMesh_Checkout {
 	 * Returns null on success, error message string on failure.
 	 */
 	private function verify_delegation_token( string $token ): ?string {
-		$gateway_url = get_option( 'agentmesh_gateway_url', '' );
+		$gateway_url = get_option( 'agentmesh_gateway_url', 'https://api.synchronity.app' );
 		if ( empty( $gateway_url ) ) {
 			// If gateway URL not configured, log and proceed (dev mode tolerance)
 			return null;
@@ -209,7 +210,7 @@ class AgentMesh_Checkout {
 	private function build_order( array $cart_data, array $shipping_address, array $billing_address, string $email, string $customer_name, string $notes, string $customer_phone = '' ): WC_Order {
 		$order = wc_create_order();
 		if ( is_wp_error( $order ) ) {
-			throw new Exception( $order->get_error_message() );
+			throw new Exception( esc_html( $order->get_error_message() ) );
 		}
 
 		// Add line items
@@ -220,7 +221,7 @@ class AgentMesh_Checkout {
 
 			$product = wc_get_product( $variant_id ?: $product_id );
 			if ( ! $product ) {
-				throw new Exception( 'Product ' . $product_id . ' not found.' );
+				throw new Exception( esc_html( 'Product ' . $product_id . ' not found.' ) );
 			}
 
 			$selected_addons = ( isset( $item['addons'] ) && is_array( $item['addons'] ) ) ? $item['addons'] : [];
@@ -234,7 +235,7 @@ class AgentMesh_Checkout {
 						if ( ! empty( $def['required'] ) && ! $this->addon_present( $selected_addons, $def['addon_id'] ) ) {
 							throw new AgentMesh_Addon_Exception(
 								'ADDON_REQUIRED',
-								sprintf( 'Add-on "%s" is required.', $def['addon_id'] )
+								sprintf( 'Add-on "%s" is required.', esc_html( $def['addon_id'] ) )
 							);
 						}
 					}

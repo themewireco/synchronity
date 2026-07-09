@@ -48,7 +48,7 @@ class AgentMesh_Webhooks {
 	 * @param array  $payload AMPS-normalised payload
 	 */
 	private function deliver( string $event, array $payload ): void {
-		$gateway_url = get_option( 'agentmesh_gateway_url', '' );
+		$gateway_url = get_option( 'agentmesh_gateway_url', 'https://api.synchronity.app' );
 		if ( empty( $gateway_url ) ) return;
 
 		$site_id    = (string) get_option( 'agentmesh_site_id', '' );

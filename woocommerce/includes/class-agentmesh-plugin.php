@@ -39,6 +39,7 @@ class AgentMesh_Plugin {
 		require_once AGENTMESH_PLUGIN_DIR . 'includes/class-orders.php';
 		require_once AGENTMESH_PLUGIN_DIR . 'includes/class-webhooks.php';
 		require_once AGENTMESH_PLUGIN_DIR . 'includes/class-reviews-endpoint.php';
+		require_once AGENTMESH_PLUGIN_DIR . 'includes/class-rotate-key.php';
 		require_once AGENTMESH_PLUGIN_DIR . 'includes/class-schema-injector.php';
 
 		if ( is_admin() ) {
@@ -82,6 +83,7 @@ class AgentMesh_Plugin {
 		( new AgentMesh_Payments() )->register_routes();
 		( new AgentMesh_Orders() )->register_routes();
 		( new AgentMesh_Reviews_Endpoint() )->register_routes();
+		( new AgentMesh_Rotate_Key() )->register_routes();
 	}
 
 	public function init_webhooks(): void {

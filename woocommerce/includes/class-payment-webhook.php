@@ -232,10 +232,12 @@ class AgentMesh_Payment_Webhook {
 
 		// Check if custom audit log table exists
 		$table_name = $wpdb->prefix . 'agentmesh_payment_audit_log';
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $table_name ) ) !== $table_name ) {
 			return;
 		}
 
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery
 		$wpdb->insert(
 			$table_name,
 			[
@@ -261,7 +263,7 @@ class AgentMesh_Payment_Webhook {
 	 * Notify Synchronity Gateway of payment status change.
 	 */
 	private function notify_gateway( WC_Order $order, string $event, string $transaction_id ): void {
-		$gateway_url = get_option( 'agentmesh_gateway_url', '' );
+		$gateway_url = get_option( 'agentmesh_gateway_url', 'https://api.synchronity.app' );
 		if ( empty( $gateway_url ) ) {
 			return;
 		}

@@ -18,16 +18,11 @@ WordPress/WooCommerce plugin for Synchronity — exposes a Synchronity-compatibl
 
 ## Configuration
 
-After activation, set the connector key in `wp-config.php` or as an env var:
+After activation, go to **WooCommerce → Settings → Synchronity** to set up the connector. No `wp-config.php` or env editing is required.
 
-```php
-define('AGENTMESH_CONNECTOR_KEY', 'your-secret-connector-key');
-```
-
-Or via environment:
-```bash
-AGENTMESH_CONNECTOR_KEY=your-secret-connector-key
-```
+1. Next to **Connector Key**, click **Generate new key**, then **Copy**. The key is stored as a WordPress option (`agentmesh_connector_key`) and validated on every request by the `X-AgentMesh-Connector-Key` header. Regenerating a key that's already linked pushes the new value to the gateway automatically.
+2. A **Site ID** (`agentmesh_site_id`) is auto-generated on first load.
+3. Finish linking the store by pasting the copied key into the Synchronity dashboard (**Storefronts → Add Storefront → WooCommerce**). For the **Store URL**, enter just your site address (e.g. `https://your-store.com`) — the gateway appends the connector path (`/wp-json/agentmesh/v1`) automatically.
 
 ### Inline Payments (Paystack)
 
@@ -97,6 +92,8 @@ The resolved modifier is per-unit: `unit_price = base + Σ modifiers`, `line_tot
 
 ## Register with the gateway
 
+Most merchants link the store from the Synchronity dashboard (**Storefronts → Add Storefront → WooCommerce**). To register over the API instead, POST the bare site domain — the gateway appends the connector path (`/wp-json/agentmesh/v1`) itself, so do **not** include it:
+
 ```bash
 curl -X POST https://api.synchronity.app/v1/register-site \
   -H "Authorization: Bearer <admin-token>" \
@@ -104,7 +101,7 @@ curl -X POST https://api.synchronity.app/v1/register-site \
   -d '{
     "name": "My WooCommerce Store",
     "platform": "woocommerce",
-    "connector_base_url": "https://myshop.com/wp-json/agentmesh/v1",
+    "connector_base_url": "https://myshop.com",
     "connector_key": "your-secret-connector-key"
   }'
 ```
@@ -146,3 +143,9 @@ php run-tests.php           # lightweight stub runner (no WP install needed)
 ## Links
 
 - [WooCommerce REST API docs](https://woocommerce.github.io/woocommerce-rest-api-docs/)
+
+## Support
+
+- **Documentation**: [synchronity.app/docs](https://synchronity.app/docs)
+- **Support Email**: hello@themewire.co
+- **GitHub Issues**: [github.com/themewireco/synchronity/issues](https://github.com/themewireco/synchronity/issues)

@@ -488,6 +488,7 @@ class AgentMesh_Cart {
 			}
 		}
 		if ( ! isset( WC()->shipping ) || ! WC()->shipping instanceof WC_Shipping ) {
+			// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
 			do_action( 'woocommerce_shipping_init' );
 			if ( ! isset( WC()->shipping ) || ! WC()->shipping instanceof WC_Shipping ) {
 				WC()->shipping = new WC_Shipping();

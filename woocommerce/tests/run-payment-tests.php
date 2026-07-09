@@ -771,6 +771,125 @@ eq( 200, $resp->get_status(), 'stripe webhook unknown order → 200 ack' );
 echo "\n";
 
 // ─────────────────────────────────────────────────────────────────
+// PayPal provider
+// ─────────────────────────────────────────────────────────────────
+echo "PayPal provider:\n";
+
+function enable_paypal(): void {
+	$GLOBALS['_agentmesh_options']['agentmesh_payment_enable_paypal'] = 'yes';
+	$GLOBALS['_agentmesh_options']['agentmesh_paypal_mode']           = 'sandbox';
+	$GLOBALS['_agentmesh_options']['agentmesh_paypal_client_id']      = 'cid_test';
+	$GLOBALS['_agentmesh_options']['agentmesh_paypal_secret']         = 'csec_test';
+}
+
+// id + enablement
+reset_world();
+$pp = new AgentMesh_PayPal_Provider();
+eq( 'paypal', $pp->id(), 'paypal id()' );
+ok( ! $pp->is_enabled(), 'paypal disabled by default (no keys/toggle)' );
+enable_paypal();
+ok( ( new AgentMesh_PayPal_Provider() )->is_enabled(), 'paypal enabled when configured + toggled' );
+
+// methods: supported vs unsupported currency
+reset_world();
+enable_paypal();
+$pp = new AgentMesh_PayPal_Provider();
+eq( [ 'card' ], $pp->get_methods( new WC_Order( 100, 25.0, 'USD' ) )['methods'], 'paypal offers card for USD' );
+eq( [], $pp->get_methods( new WC_Order( 101, 25.0, 'GHS' ) )['methods'], 'paypal hidden for GHS (unsupported)' );
+
+// initiate → approval url (OAuth then create-order)
+reset_world();
+enable_paypal();
+add_order( new WC_Order( 110, 30.0, 'USD' ) );
+_queue_http( [ 'access_token' => 'A123', 'token_type' => 'Bearer' ] );
+_queue_http( [
+	'id'     => 'PPORDER1',
+	'status' => 'PAYER_ACTION_REQUIRED',
+	'links'  => [
+		[ 'rel' => 'self', 'href' => 'https://api/x' ],
+		[ 'rel' => 'payer-action', 'href' => 'https://www.paypal.com/checkoutnow?token=PPORDER1' ],
+	],
+] );
+$payments = new AgentMesh_Payments();
+$data = $payments->initiate( req( [ 'order_id' => 110, 'channel' => 'card', 'gateway' => 'paypal' ] ) )->get_data();
+eq( 'awaiting_user', $data['payment_status'], 'paypal initiate → awaiting_user' );
+eq( 'redirect', $data['instruction']['action'], 'paypal instruction action redirect' );
+eq( 'https://www.paypal.com/checkoutnow?token=PPORDER1', $data['instruction']['authorization_url'], 'paypal approval url passed through' );
+eq( 'PPORDER1', wc_get_order( 110 )->get_meta( '_agentmesh_payment_reference' ), 'paypal order id stored as reference' );
+eq( 'paypal', wc_get_order( 110 )->get_meta( '_agentmesh_payment_gateway' ), 'gateway stored as paypal' );
+ok( str_contains( $GLOBALS['_http_calls'][0]['args']['headers']['Authorization'], 'Basic ' ), 'oauth uses Basic auth' );
+$sent = json_decode( $GLOBALS['_http_calls'][1]['args']['body'], true );
+eq( '30.00', $sent['purchase_units'][0]['amount']['value'], 'paypal posts decimal value from order' );
+eq( 'USD', $sent['purchase_units'][0]['amount']['currency_code'], 'paypal posts order currency' );
+
+// verify: COMPLETED → success
+reset_world();
+enable_paypal();
+_queue_http( [ 'access_token' => 'A123' ] );
+_queue_http( [
+	'id'             => 'PPORDER2',
+	'status'         => 'COMPLETED',
+	'purchase_units' => [ [ 'payments' => [ 'captures' => [ [ 'amount' => [ 'value' => '40.00', 'currency_code' => 'USD' ] ] ] ] ] ],
+] );
+$v = ( new AgentMesh_PayPal_Provider() )->verify( 'PPORDER2' );
+eq( 'success', $v['status'], 'paypal verify COMPLETED → success' );
+eq( 40.0, $v['amount'], 'paypal verify amount (decimal)' );
+eq( 'USD', $v['currency'], 'paypal verify currency' );
+
+// verify: APPROVED → captures → success
+reset_world();
+enable_paypal();
+_queue_http( [ 'access_token' => 'A123' ] );
+_queue_http( [ 'id' => 'PPORDER3', 'status' => 'APPROVED' ] );
+_queue_http( [
+	'id'             => 'PPORDER3',
+	'status'         => 'COMPLETED',
+	'purchase_units' => [ [ 'payments' => [ 'captures' => [ [ 'amount' => [ 'value' => '12.50', 'currency_code' => 'USD' ] ] ] ] ] ],
+] );
+$v = ( new AgentMesh_PayPal_Provider() )->verify( 'PPORDER3' );
+eq( 'success', $v['status'], 'paypal verify APPROVED → capture → success' );
+eq( 12.5, $v['amount'], 'paypal capture amount' );
+ok( str_contains( $GLOBALS['_http_calls'][2]['url'], '/v2/checkout/orders/PPORDER3/capture' ), 'paypal hits capture endpoint' );
+
+// verify: APPROVED but ORDER_ALREADY_CAPTURED → success
+reset_world();
+enable_paypal();
+_queue_http( [ 'access_token' => 'A123' ] );
+_queue_http( [ 'id' => 'PPORDER4', 'status' => 'APPROVED', 'purchase_units' => [ [ 'amount' => [ 'value' => '9.00', 'currency_code' => 'USD' ] ] ] ] );
+_queue_http( [ 'name' => 'UNPROCESSABLE_ENTITY', 'details' => [ [ 'issue' => 'ORDER_ALREADY_CAPTURED' ] ] ], 422 );
+$v = ( new AgentMesh_PayPal_Provider() )->verify( 'PPORDER4' );
+eq( 'success', $v['status'], 'paypal already-captured → success' );
+eq( 9.0, $v['amount'], 'paypal already-captured amount from order' );
+
+// verify: VOIDED → failed
+reset_world();
+enable_paypal();
+_queue_http( [ 'access_token' => 'A123' ] );
+_queue_http( [ 'id' => 'PPORDER5', 'status' => 'VOIDED' ] );
+eq( 'failed', ( new AgentMesh_PayPal_Provider() )->verify( 'PPORDER5' )['status'], 'paypal verify VOIDED → failed' );
+
+// submit_otp unsupported
+reset_world();
+enable_paypal();
+eq( 'failed', ( new AgentMesh_PayPal_Provider() )->submit_otp( new WC_Order( 120, 5.0, 'USD' ), 'PPX', '1234' )['payment_status'], 'paypal rejects submit_otp' );
+
+// keys prefer the WooCommerce PayPal Payments plugin options
+reset_world();
+$GLOBALS['_agentmesh_options']['woocommerce-ppcp-settings'] = [ 'client_id' => 'cid_PLUGIN', 'client_secret' => 'csec_PLUGIN', 'sandbox_on' => false ];
+$keys = ( new AgentMesh_PayPal_Provider() )->get_keys();
+eq( 'live', $keys['mode'], 'paypal keys: sandbox_on false → live' );
+eq( 'cid_PLUGIN', $keys['client_id'], 'paypal keys from ppcp plugin' );
+
+// registry resolves paypal when enabled
+reset_world();
+enable_paypal();
+$reg = new AgentMesh_Payment_Gateways();
+ok( null !== $reg->get( 'paypal' ), 'registry get(paypal) when enabled' );
+ok( in_array( 'paypal', array_map( fn( $p ) => $p->id(), $reg->enabled() ), true ), 'registry enables paypal' );
+
+echo "\n";
+
+// ─────────────────────────────────────────────────────────────────
 // Summary
 // ─────────────────────────────────────────────────────────────────
 echo "================================\n";
