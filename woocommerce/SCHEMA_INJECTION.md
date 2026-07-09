@@ -192,7 +192,7 @@ Invalid or missing fields result in silent skip-injection.
 
 ### Setting Options
 
-Via WordPress settings or in `wp-config.php`:
+Via WordPress settings or programmatically in PHP (e.g. via WP-CLI):
 
 ```php
 // Enable schema injection (default: true)
@@ -473,7 +473,7 @@ define( 'WP_REDIS_PORT', 6379 );
 
 ### Setting Options
 
-Via WordPress settings or in `wp-config.php`:
+Via WordPress settings or programmatically in PHP (e.g. via WP-CLI):
 
 ```php
 // Enable schema injection (default: true)
