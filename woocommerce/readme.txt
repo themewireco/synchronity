@@ -2,7 +2,7 @@
 Contributors: themewireco
 Tags: agentmesh, ai-commerce, woocommerce, ai-agents
 Requires at least: 6.0
-Tested up to: 6.6
+Tested up to: 7.0
 Requires PHP: 8.2
 Stable tag: 0.4.7
 License: GPLv2 or later
