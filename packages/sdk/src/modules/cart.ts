@@ -42,6 +42,22 @@ export class CartModule {
     );
   }
 
+  /**
+   * Set a cart line's quantity (server-side; checkout reads the server cart).
+   * A quantity of 0 removes the line.
+   */
+  async setItemQuantity(
+    siteId: string,
+    cartId: string,
+    itemId: string,
+    quantity: number,
+  ): Promise<AMPSCart> {
+    return this.http.put<AMPSCart>(
+      `/v1/sites/${siteId}/cart/${cartId}/items/${itemId}`,
+      { quantity },
+    );
+  }
+
   async applyCoupon(
     siteId: string,
     cartId: string,
@@ -63,5 +79,13 @@ export class CartModule {
 
   async selectShippingOption(siteId: string, cartId: string, optionId: string): Promise<AMPSCart> {
     return this.http.post<AMPSCart>(`/v1/sites/${siteId}/cart/${cartId}/shipping-option`, { option_id: optionId });
+  }
+
+  /**
+   * Retrieve the buyer's current open cart for a site (cart-resume).
+   * Returns the cart if one is in progress, or null if none.
+   */
+  async getActive(siteId: string): Promise<AMPSCart | null> {
+    return this.http.get<AMPSCart | null>(`/v1/sites/${siteId}/cart/active`);
   }
 }

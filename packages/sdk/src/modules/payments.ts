@@ -12,6 +12,8 @@ export interface InitiatePaymentParams {
   phone?: string;
   /** Required for mobile_money. */
   provider?: MobileMoneyProvider;
+  /** Optional payment gateway to use when the store has more than one enabled. */
+  gateway?: 'paystack' | 'stripe' | 'paypal';
   /** Human delegation token; alternatively sent via the Authorization Bearer. */
   buyer_delegation_token?: string;
 }
@@ -44,6 +46,7 @@ export class PaymentsModule {
         channel: params.channel,
         ...(params.phone !== undefined && { phone: params.phone }),
         ...(params.provider !== undefined && { provider: params.provider }),
+        ...(params.gateway !== undefined && { gateway: params.gateway }),
         ...(params.buyer_delegation_token !== undefined && {
           buyer_delegation_token: params.buyer_delegation_token,
         }),

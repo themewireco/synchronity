@@ -58,6 +58,19 @@ export class ProductsModule {
     return this.http.get<AMPSProduct>(`/v1/sites/${siteId}/products/${productId}`);
   }
 
+  /**
+   * Request a back-in-stock alert for an out-of-stock product. The buyer is emailed
+   * (if `email` is given) when the product is next seen in stock, and the request
+   * surfaces to the merchant as demand.
+   */
+  async notifyRestock(
+    siteId: string,
+    productId: string,
+    params?: { variant_id?: string; email?: string; product_title?: string },
+  ): Promise<{ status: string; notification_id: string; will_email: boolean; message: string }> {
+    return this.http.post(`/v1/sites/${siteId}/products/${productId}/notify-restock`, params ?? {});
+  }
+
   async compare(
     siteIds: string[],
     query: SearchProductsParams,
