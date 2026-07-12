@@ -475,6 +475,22 @@ class AgentMesh_Cart {
 	 * ask WooCommerce for the available rates for the destination. Returns an
 	 * array of AMPSShippingOption. Integration seam (needs the WC runtime).
 	 */
+	/**
+	 * Resolve WooCommerce's own install path without assuming a folder name.
+	 * Prefers WC_ABSPATH; falls back to the directory of WooCommerce's main
+	 * plugin file. Returns '' if WooCommerce is not loaded (callers guard with
+	 * file_exists()), so we never hardcode wp-content/plugins/woocommerce/.
+	 */
+	private function wc_abspath(): string {
+		if ( defined( 'WC_ABSPATH' ) ) {
+			return WC_ABSPATH;
+		}
+		if ( defined( 'WC_PLUGIN_FILE' ) ) {
+			return trailingslashit( plugin_dir_path( WC_PLUGIN_FILE ) );
+		}
+		return '';
+	}
+
 	private function compute_shipping_options( array $cart_data, array $destination ): array {
 		if ( ! function_exists( 'WC' ) ) {
 			return [];
@@ -482,7 +498,7 @@ class AgentMesh_Cart {
 
 		// Ensure shipping class and methods are loaded and initialized in REST API context
 		if ( ! class_exists( 'WC_Shipping' ) ) {
-			$wc_abspath = defined( 'WC_ABSPATH' ) ? WC_ABSPATH : WP_PLUGIN_DIR . '/woocommerce/';
+			$wc_abspath = $this->wc_abspath();
 			if ( file_exists( $wc_abspath . 'includes/class-wc-shipping.php' ) ) {
 				include_once $wc_abspath . 'includes/class-wc-shipping.php';
 			}
@@ -497,7 +513,7 @@ class AgentMesh_Cart {
 
 		// Ensure session context exists so caching/retrieval in WC_Shipping works without fatal error
 		if ( ! class_exists( 'WC_Session_Handler' ) ) {
-			$wc_abspath = defined( 'WC_ABSPATH' ) ? WC_ABSPATH : WP_PLUGIN_DIR . '/woocommerce/';
+			$wc_abspath = $this->wc_abspath();
 			if ( file_exists( $wc_abspath . 'includes/class-wc-session-handler.php' ) ) {
 				include_once $wc_abspath . 'includes/class-wc-session-handler.php';
 			}
@@ -516,7 +532,7 @@ class AgentMesh_Cart {
 
 		// Ensure cart context exists for any plugins/hooks that reference WC()->cart during shipping calculation
 		if ( ! class_exists( 'WC_Cart' ) ) {
-			$wc_abspath = defined( 'WC_ABSPATH' ) ? WC_ABSPATH : WP_PLUGIN_DIR . '/woocommerce/';
+			$wc_abspath = $this->wc_abspath();
 			if ( file_exists( $wc_abspath . 'includes/class-wc-cart.php' ) ) {
 				include_once $wc_abspath . 'includes/class-wc-cart.php';
 			}

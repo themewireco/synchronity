@@ -1,43 +1,95 @@
 === Synchronity for WooCommerce ===
 Contributors: themewireco
-Tags: agentmesh, ai-commerce, woocommerce, ai-agents
+Tags: ai, commerce, woocommerce, ai-agents, checkout
 Requires at least: 6.0
 Tested up to: 7.0
 Requires PHP: 8.2
-Stable tag: 0.4.7
+Stable tag: 0.4.8
 License: GPLv2 or later
+License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Connect your WooCommerce store to the AgentMesh network — enabling AI agents to discover, search, and purchase from your store.
+Connect your WooCommerce store to Synchronity so AI agents can discover, search, and purchase your products on a shopper's behalf.
 
 == Description ==
 
-AgentMesh for WooCommerce implements the AgentMesh Connector Interface, exposing your WooCommerce product catalogue, cart, and checkout to the AgentMesh Gateway. AI agents (Claude, ChatGPT, LangChain, etc.) can then autonomously browse products, manage carts, and place orders on behalf of users.
+Synchronity for WooCommerce connects your store to the Synchronity Gateway, a hosted service operated by Themewire Ltd. Once connected, AI agents (such as Claude and ChatGPT) can browse your product catalogue, build carts, and place real orders on behalf of a shopper, using the Synchronity Model Context Protocol tools.
+
+The plugin exposes your store to the gateway through a set of authenticated REST endpoints and normalises every response to the Synchronity product and order schema. It does nothing until you enter your Synchronity Gateway URL and Connector Key on the settings screen, and it makes no outbound network request until that connection is configured.
 
 **Features:**
-* Full AMPS-normalised product catalogue API
-* Cart session management (create, add/remove items, coupons)
+
+* Product catalogue API (list, search, single product, reviews)
+* Cart session management (create, add / remove items, quantities, coupons)
+* Shipping option calculation for a destination
 * Checkout execution via buyer delegation tokens
 * Order tracking and status
-* Webhook delivery for inventory and order events
-* Admin settings page under WooCommerce → AgentMesh
-* **Phase 6: Automatic Schema Injection** — Automatically injects signed AMPS schema for LLM discovery via IP-based detection
+* Optional in-chat payments (Paystack, Stripe, PayPal) using your own gateway credentials
+* Webhook delivery for inventory and order events (only after the connector is configured)
+* Optional AMPS schema hint for LLM discovery (off by default, opt-in)
+* Product Add-ons (ACF) support
+* Admin settings under WooCommerce → Settings → Synchronity
 
 == Installation ==
 
-1. Upload the plugin to `/wp-content/plugins/synchronity-for-woocommerce/`
-2. Activate the plugin via the 'Plugins' menu in WordPress
-3. Navigate to WooCommerce → Settings → AgentMesh
-4. Enter your AgentMesh Gateway URL and Connector Key
+1. Install and activate WooCommerce (required).
+2. Upload the plugin to `/wp-content/plugins/synchronity-for-woocommerce/` and activate it via the Plugins menu.
+3. Go to WooCommerce → Settings → Synchronity.
+4. Enter your Synchronity Gateway URL and Connector Key, then save.
+5. Optionally enable in-chat payments and enter your payment provider keys.
+
+No data leaves your store until steps 3–4 are complete.
 
 == Frequently Asked Questions ==
 
-= What is AgentMesh? =
-AgentMesh is an AI agentic commerce infrastructure layer. It normalises your WooCommerce store API so AI agents can transact programmatically.
+= What is Synchronity? =
+Synchronity is a hosted AI commerce service by Themewire Ltd (https://synchronity.app). It normalises your WooCommerce store so AI agents can browse and transact through a standard interface. This plugin is the WooCommerce connector for that service.
+
+= Do I have to use the service? =
+Yes. The plugin is a connector to the Synchronity Gateway and requires an account and Connector Key from https://synchronity.app to function. Without a configured connection the plugin makes no external calls.
 
 = Is WooCommerce required? =
-Yes — WooCommerce 7.0 or higher must be installed and active.
+Yes. WooCommerce 7.0 or higher must be installed and active.
+
+= Does the plugin send data anywhere by default? =
+No. All outbound requests are gated on you configuring a Gateway URL and Connector Key. The optional schema hint is disabled by default.
+
+== External services ==
+
+This plugin relies on the following third party / external services. Each is only contacted after you configure the connector and, for payments, only after you enable that provider and enter its credentials.
+
+**Synchronity Gateway (Themewire Ltd) — required**
+This is the core service the plugin connects to. It is what lets AI agents discover and transact with your store.
+What is sent and when: after you enter a Gateway URL and Connector Key, the plugin serves authenticated requests from the gateway (product, cart, checkout and order data) and, if enabled, delivers inventory and order webhook events to the gateway. Requests are signed with your Connector Key. No request is made before the connection is configured.
+Default endpoint: https://api.synchronity.app
+Terms of service: https://synchronity.app/terms
+Privacy policy: https://synchronity.app/privacy-policy
+
+**Paystack — optional (in-chat payments)**
+Used only if you enable Paystack under Inline Payments and provide your Paystack keys.
+What is sent and when: when a buyer pays in chat, the plugin creates and verifies a transaction with Paystack for the order amount and currency. No card data is handled by the plugin.
+Terms of service: https://paystack.com/terms
+Privacy policy: https://paystack.com/privacy
+
+**Stripe — optional (in-chat payments)**
+Used only if you enable Stripe under Inline Payments and provide your Stripe keys (or have the official Stripe plugin configured).
+What is sent and when: when a buyer pays in chat, the plugin creates and verifies a Stripe checkout / payment for the order amount and currency. No card data is handled by the plugin.
+Terms of service: https://stripe.com/legal/ssa
+Privacy policy: https://stripe.com/privacy
+
+**PayPal — optional (in-chat payments)**
+Used only if you enable PayPal under Inline Payments and provide your PayPal keys (or have the official PayPal Payments plugin configured).
+What is sent and when: when a buyer pays in chat, the plugin creates and captures a PayPal order for the order amount and currency via the PayPal Orders API. No card data is handled by the plugin.
+Terms of service: https://www.paypal.com/legalhub/home
+Privacy policy: https://www.paypal.com/myaccount/privacy/privacyHub
 
 == Changelog ==
+
+= 0.4.8 =
+* Schema hint for LLM discovery is now off by default and only runs after the connector is configured (no requests before setup).
+* Webhook delivery now requires a configured Gateway URL, Site ID and Connector Key before any event is sent.
+* Admin key actions script moved out of inline markup into an enqueued file.
+* Hardened schema output escaping and removed hardcoded WooCommerce path assumptions.
+* readme: documented the Synchronity Gateway, Paystack, Stripe and PayPal external services.
 
 = 0.4.7 =
 * New: PayPal as a selectable in-chat payment gateway (PayPal-hosted redirect via Orders v2, captures on return/poll). Credentials read from the WooCommerce PayPal Payments plugin when present. Enable under Inline Payments (PayPal); shown only for PayPal-supported currencies.
@@ -71,7 +123,7 @@ Yes — WooCommerce 7.0 or higher must be installed and active.
 * Admin: Inline Payments settings (channel toggles + Paystack webhook URL)
 
 = 0.2.0 =
-* Phase 6 Schema Injection — Automatic schema injection for LLM discovery
+* Schema hint — automatic schema hint for LLM discovery
 * IP-only detection (works with generic User-Agent from web_fetch)
 * Signed schema with public key validation
 * 5-minute schema caching to reduce gateway load
@@ -80,4 +132,4 @@ Yes — WooCommerce 7.0 or higher must be installed and active.
 = 0.1.0 =
 * Initial release — Phase 1 WooCommerce connector
 * Implements all mandatory Connector Interface endpoints
-* Full AMPS normalisation layer
+* Full product / order normalisation layer

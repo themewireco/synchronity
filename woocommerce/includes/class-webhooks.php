@@ -48,11 +48,16 @@ class AgentMesh_Webhooks {
 	 * @param array  $payload AMPS-normalised payload
 	 */
 	private function deliver( string $event, array $payload ): void {
-		$gateway_url = get_option( 'agentmesh_gateway_url', 'https://api.synchronity.app' );
-		if ( empty( $gateway_url ) ) return;
+		$gateway_url   = (string) get_option( 'agentmesh_gateway_url', '' );
+		$site_id       = (string) get_option( 'agentmesh_site_id', '' );
+		$connector_key = (string) get_option( 'agentmesh_connector_key', '' );
 
-		$site_id    = (string) get_option( 'agentmesh_site_id', '' );
-		$connector_key = get_option( 'agentmesh_connector_key', '' );
+		// Never deliver until the merchant has configured the connector against a
+		// gateway. Without a gateway URL, site id and connector key there is no
+		// service to talk to, so we make no outbound request (no phoning home).
+		if ( '' === trim( $gateway_url ) || '' === trim( $site_id ) || '' === trim( $connector_key ) ) {
+			return;
+		}
 
 		$body      = wp_json_encode( $payload );
 		$signature = hash_hmac( 'sha256', $body, $connector_key );

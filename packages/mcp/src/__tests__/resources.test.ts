@@ -68,7 +68,20 @@ describe('per-client resource mime (ChatGPT skybridge vs Claude profile)', () =>
     for (const r of listUiResources({ openai: true }) as any[]) {
       expect(r.mimeType).toBe(OPENAI_MIME_TYPE);
       expect(r._meta['openai/widgetCSP']).toBeDefined();
-      expect(r._meta['openai/widgetCSP'].resource_domains).toContain('https:');
+      // ChatGPT validates each resource_domains entry as a URL, so no bare
+      // scheme-source (`https:`); every entry must parse as a valid URL.
+      const domains: string[] = r._meta['openai/widgetCSP'].resource_domains;
+      expect(domains).toContain('https://*');
+      for (const d of domains) {
+        expect(() => new URL(d)).not.toThrow();
+      }
+      // ChatGPT ALSO validates _meta.ui.csp.resourceDomains as URLs — the bare
+      // scheme-source `https:` must NOT appear on the ChatGPT surface.
+      const uiDomains: string[] = r._meta.ui.csp.resourceDomains;
+      expect(uiDomains).not.toContain('https:');
+      for (const d of uiDomains) {
+        expect(() => new URL(d)).not.toThrow();
+      }
     }
     const read = readUiResource('ui://synchronity/product', { openai: true })!;
     expect(read.contents[0].mimeType).toBe(OPENAI_MIME_TYPE);
@@ -79,6 +92,9 @@ describe('per-client resource mime (ChatGPT skybridge vs Claude profile)', () =>
     for (const r of listUiResources() as any[]) {
       expect(r.mimeType).toBe(RESOURCE_MIME_TYPE);
       expect(r._meta['openai/widgetCSP']).toBeUndefined();
+      // Claude/MCP-Apps maps resourceDomains to a CSP source list, where the
+      // scheme-source `https:` is required to allow arbitrary https image CDNs.
+      expect(r._meta.ui.csp.resourceDomains).toContain('https:');
     }
     const read = readUiResource('ui://synchronity/product')!;
     expect(read.contents[0].mimeType).toBe(RESOURCE_MIME_TYPE);

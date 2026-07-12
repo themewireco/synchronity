@@ -45,6 +45,30 @@ class AgentMesh_Settings {
 			AGENTMESH_VERSION,
 			true
 		);
+		wp_enqueue_script(
+			'agentmesh-key-actions',
+			AGENTMESH_PLUGIN_URL . 'admin/js/key-actions.js',
+			[],
+			AGENTMESH_VERSION,
+			true
+		);
+		wp_localize_script(
+			'agentmesh-key-actions',
+			'AgentMeshKeyActions',
+			[
+				'ajaxUrl' => esc_url_raw( admin_url( 'admin-ajax.php' ) ),
+				'nonce'   => wp_create_nonce( 'agentmesh_rotate_key' ),
+				'i18n'    => [
+					'generating'     => __( 'Generating…', 'synchronity-for-woocommerce' ),
+					'rotated'        => __( 'Key rotated.', 'synchronity-for-woocommerce' ),
+					'rotationFailed' => __( 'Rotation failed', 'synchronity-for-woocommerce' ),
+					'requestFailed'  => __( 'Rotation request failed', 'synchronity-for-woocommerce' ),
+					'noKey'          => __( 'No key to copy. Generate one first.', 'synchronity-for-woocommerce' ),
+					'copied'         => __( 'Copied to clipboard.', 'synchronity-for-woocommerce' ),
+					'copyFail'       => __( 'Copy failed — select the Connector Key field and copy manually.', 'synchronity-for-woocommerce' ),
+				],
+			]
+		);
 		WC_Admin_Settings::output_fields( $this->get_settings() );
 	}
 
@@ -568,8 +592,8 @@ class AgentMesh_Settings {
 		$gen_label   = esc_html__( 'Generate new key', 'synchronity-for-woocommerce' );
 		$copy_label  = esc_html__( 'Copy', 'synchronity-for-woocommerce' );
 		$default_msg = __( 'Click "Generate new key" to mint a fresh key. When this store is already linked to Synchronity, it will be pushed to the gateway automatically.', 'synchronity-for-woocommerce' );
-		$nonce       = wp_create_nonce( 'agentmesh_rotate_key' );
-		$ajax_url    = esc_url_raw( admin_url( 'admin-ajax.php' ) );
+		// The Generate/Copy behaviour is bound by admin/js/key-actions.js, enqueued
+		// and localised (nonce + ajax URL + strings) in output_settings().
 		?>
 		<tr valign="top">
 			<th scope="row" class="titledesc">&nbsp;</th>
@@ -579,65 +603,6 @@ class AgentMesh_Settings {
 				<p class="description" id="agentmesh_key_feedback"><?php echo esc_html( $default_msg ); ?></p>
 			</td>
 		</tr>
-		<script>
-		(function () {
-			var input   = document.getElementById('agentmesh_connector_key');
-			var gen     = document.getElementById('agentmesh_generate_key');
-			var cpy     = document.getElementById('agentmesh_copy_key');
-			var fb      = document.getElementById('agentmesh_key_feedback');
-			var ajaxUrl = <?php echo wp_json_encode( $ajax_url ); ?>;
-			var nonce   = <?php echo wp_json_encode( $nonce ); ?>;
-			if (!input || !gen || !cpy || !fb) return;
-
-			function setMsg(msg, kind) {
-				fb.textContent = msg;
-				fb.style.color = kind === 'ok' ? '#1e7e34' : (kind === 'warn' ? '#a94442' : '');
-			}
-
-			gen.addEventListener('click', function (e) {
-				e.preventDefault();
-				gen.disabled = true;
-				setMsg(<?php echo wp_json_encode( __( 'Generating…', 'synchronity-for-woocommerce' ) ); ?>, '');
-				var body = new URLSearchParams();
-				body.set('action', 'agentmesh_rotate_key');
-				body.set('_wpnonce', nonce);
-				fetch(ajaxUrl, { method: 'POST', credentials: 'same-origin', body: body })
-					.then(function (r) { return r.json().then(function (j) { return { ok: r.ok, status: r.status, json: j }; }); })
-					.then(function (res) {
-						if (res.ok && res.json && res.json.success && res.json.data && res.json.data.new_key) {
-							input.value = res.json.data.new_key;
-							input.type  = 'text'; // reveal so the merchant can verify / copy
-							setMsg(res.json.data.message || 'Key rotated.', 'ok');
-						} else {
-							var msg = (res.json && res.json.data && res.json.data.message) || 'Rotation failed (HTTP ' + res.status + ').';
-							setMsg(msg, 'warn');
-						}
-					})
-					.catch(function (err) {
-						setMsg('Rotation request failed: ' + (err && err.message ? err.message : err), 'warn');
-					})
-					.finally(function () { gen.disabled = false; });
-			});
-
-			cpy.addEventListener('click', function (e) {
-				e.preventDefault();
-				if (!input.value) {
-					setMsg(<?php echo wp_json_encode( __( 'No key to copy. Generate one first.', 'synchronity-for-woocommerce' ) ); ?>, 'warn');
-					return;
-				}
-				var done = function () { setMsg(<?php echo wp_json_encode( __( 'Copied to clipboard.', 'synchronity-for-woocommerce' ) ); ?>, 'ok'); };
-				var fail = function () { setMsg(<?php echo wp_json_encode( __( 'Copy failed — select the Connector Key field and copy manually.', 'synchronity-for-woocommerce' ) ); ?>, 'warn'); };
-				if (navigator.clipboard && navigator.clipboard.writeText) {
-					navigator.clipboard.writeText(input.value).then(done, fail);
-				} else {
-					var prev = input.type; input.type = 'text';
-					input.select();
-					try { document.execCommand('copy') ? done() : fail(); } catch (_) { fail(); }
-					input.type = prev;
-				}
-			});
-		})();
-		</script>
 		<?php
 	}
 
