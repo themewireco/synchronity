@@ -51,8 +51,15 @@ class AgentMesh_Schema_Injector {
 	 * Inject schema into HTML if visitor is an LLM (IP-based detection).
 	 */
 	public function inject_schema(): void {
-		// Check if schema injection is enabled
-		if ( ! get_option( 'agentmesh_schema_injection_enabled', true ) ) {
+		// Check if schema injection is explicitly enabled (opt-in, off by default).
+		if ( ! get_option( 'agentmesh_schema_injection_enabled', false ) ) {
+			return;
+		}
+
+		// Never contact the gateway until the merchant has configured the connector
+		// (gateway URL + connector key). This keeps the plugin from making any
+		// outbound request before the merchant has opted into the service.
+		if ( ! $this->is_connector_configured() ) {
 			return;
 		}
 
@@ -75,7 +82,20 @@ class AgentMesh_Schema_Injector {
 			return;
 		}
 
+		// render_schema_tag() hex-encodes tags, ampersands and quotes in the JSON,
+		// so the output contains no active HTML characters and is safe to echo.
 		echo $this->render_schema_tag( $schema ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+	}
+
+	/**
+	 * Whether the merchant has configured the connector against a gateway.
+	 * No outbound request is made until both the gateway URL and connector key
+	 * are set, so the plugin never phones home before the service is set up.
+	 */
+	private function is_connector_configured(): bool {
+		$gateway_url   = (string) get_option( 'agentmesh_gateway_url', '' );
+		$connector_key = (string) get_option( 'agentmesh_connector_key', '' );
+		return '' !== trim( $gateway_url ) && '' !== trim( $connector_key );
 	}
 
 	/**
@@ -251,13 +271,18 @@ class AgentMesh_Schema_Injector {
 	 * @return string HTML script tag
 	 */
 	private function render_schema_tag( array $schema ): string {
-		$schema_json = json_encode( $schema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+		// Encode with slashes escaped (no JSON_UNESCAPED_SLASHES) so a "</script>"
+		// substring in any value becomes "<\/script>" and cannot break out of the
+		// script tag. Additionally hex-encode the angle-bracket / ampersand / quote
+		// characters as a defence in depth. The result is valid JSON-LD.
+		$schema_json = wp_json_encode(
+			$schema,
+			JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT
+		);
 
 		if ( false === $schema_json ) {
 			return '';
 		}
-
-		$schema_json_escaped = esc_attr( $schema_json );
 
 		return sprintf(
 			'<script type="application/ld+json" id="agentmesh-amps-schema">%s</script>' . "\n",

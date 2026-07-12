@@ -77,30 +77,34 @@ const RESOURCES: UiResourceDef[] = [
   },
 ];
 
-/**
- * `_meta.ui` for every product View. Views make no network calls of their own
- * (all data/actions flow through the host bridge) → `connectDomains` empty.
- * `resourceDomains` must cover arbitrary merchant image CDNs plus the Google Fonts
- * origins; mapped by the host to img/script/style/font/media-src.
- * NOTE: broad image allow-listing — revisit if a host rejects `https://*` (see
- * design doc risk #3; fallback is inlining images).
- */
-const UI_META = {
-  csp: {
-    connectDomains: [] as string[],
-    // CSP scheme-source: allow ALL https static resources (images, fonts). Merchant
-    // product images come from arbitrary HTTPS CDNs, so a bare host list can't cover
-    // them. A bare `https://*` is NOT a valid CSP source (only `https://*.host` is) and
-    // strict hosts (Claude Desktop) drop it → images blocked. `https:` is the valid
-    // "any https" scheme-source. Explicit font origins kept as belt-and-suspenders.
-    resourceDomains: [
-      'https:',
-      'https://fonts.googleapis.com',
-      'https://fonts.gstatic.com',
-    ],
-  },
-  prefersBorder: false,
-};
+// Views make no network calls of their own (all data/actions flow through the
+// host bridge) → `connectDomains` empty. `resourceDomains` must cover arbitrary
+// merchant image CDNs plus the Google Fonts origins; mapped by the host to
+// img/script/style/font/media-src.
+//
+// Merchant product images come from arbitrary HTTPS CDNs that can't be enumerated,
+// so "allow any https" is required. The two host dialects express that differently
+// AND validate it differently, so the resourceDomains list must be per-client:
+//  - Claude / MCP-Apps maps resourceDomains onto a Content-Security-Policy source
+//    list, where the scheme-source `https:` is the only way to allow any https
+//    (a bare host wildcard like `https://*` is NOT a valid CSP source and strict
+//    hosts drop it → images blocked).
+//  - ChatGPT's Apps scanner validates every entry as a URL and REJECTS the bare
+//    scheme `https:`, so it needs the wildcard URL form `https://*`.
+const FONT_ORIGINS = ['https://fonts.googleapis.com', 'https://fonts.gstatic.com'];
+const CLAUDE_RESOURCE_DOMAINS = ['https:', ...FONT_ORIGINS];
+const OPENAI_RESOURCE_DOMAINS = ['https://*', ...FONT_ORIGINS];
+
+/** `_meta.ui` for a product View, with the resourceDomains dialect the client needs. */
+function uiMeta(opts?: ResourceServeOpts) {
+  return {
+    csp: {
+      connectDomains: [] as string[],
+      resourceDomains: opts?.openai ? OPENAI_RESOURCE_DOMAINS : CLAUDE_RESOURCE_DOMAINS,
+    },
+    prefersBorder: false,
+  };
+}
 
 /** Escape only the `</script` sequence so the inlined bundle can't close the tag. */
 function safeScript(js: string): string {
@@ -149,19 +153,19 @@ function buildHtml(bundleFile: string): string {
 }
 
 /**
- * OpenAI-dialect CSP for ChatGPT. Mirrors UI_META.csp into the field names the
- * ChatGPT sandbox reads; without it merchant product images (arbitrary HTTPS
- * CDNs) are blocked even once the widget renders.
+ * OpenAI-dialect CSP for ChatGPT, in the field names the ChatGPT sandbox reads;
+ * without it merchant product images (arbitrary HTTPS CDNs) are blocked even
+ * once the widget renders. Uses the URL-valid domain list (no bare `https:`).
  */
 const OPENAI_WIDGET_CSP = {
   connect_domains: [] as string[],
-  resource_domains: UI_META.csp.resourceDomains,
+  resource_domains: OPENAI_RESOURCE_DOMAINS,
 };
 
 /** Shared `_meta` for a resource descriptor (list + templates). */
 function resourceMeta(r: UiResourceDef, opts?: ResourceServeOpts) {
   return {
-    ui: UI_META,
+    ui: uiMeta(opts),
     'openai/widgetDescription': r.widgetDescription,
     'openai/toolInvocation/invoking': r.invoking,
     'openai/toolInvocation/invoked': r.invoked,
@@ -214,7 +218,7 @@ export function readUiResource(uri: string, opts?: ResourceServeOpts) {
         mimeType: mimeFor(opts),
         text: buildHtml(def.bundle),
         _meta: {
-          ui: UI_META,
+          ui: uiMeta(opts),
           ...(opts?.openai ? { 'openai/widgetCSP': OPENAI_WIDGET_CSP } : {}),
         },
       },

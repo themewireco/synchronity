@@ -90,11 +90,18 @@ export class SynchronityServerError extends SynchronityError {
 
 export function parseErrorResponse(
   status: number,
-  body: SynchronityErrorResponse,
+  body: any,
   requestId?: string,
   retryAfter?: number,
 ): SynchronityError {
-  const { code, message } = body.error;
+  const errorObj = body && typeof body === 'object' ? body.error : null;
+  const code = (errorObj && typeof errorObj === 'object' ? errorObj.code : null) 
+    || (body && typeof body === 'object' ? body.code : null)
+    || 'UNKNOWN_ERROR';
+  const message = (errorObj && typeof errorObj === 'object' ? errorObj.message : null)
+    || (body && typeof body === 'object' ? body.message : null)
+    || (typeof errorObj === 'string' ? errorObj : null)
+    || `HTTP ${status}: ${body && typeof body === 'object' ? JSON.stringify(body) : String(body)}`;
 
   switch (status) {
     case 400:

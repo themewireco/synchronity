@@ -65,7 +65,7 @@ class AgentMesh_Plugin {
 	}
 
 	public function init_schema_injector(): void {
-		if ( get_option( 'agentmesh_schema_injection_enabled', true ) ) {
+		if ( get_option( 'agentmesh_schema_injection_enabled', false ) ) {
 			( new AgentMesh_Schema_Injector() )->init();
 		}
 	}

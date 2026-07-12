@@ -89,6 +89,9 @@ export interface AMPSProduct {
   images: AMPSProductImage[];
   url: string | null;
   addons?: AMPSProductAddon[];
+  /** How add-on prices combine with the base: 'absolute' = line is the sum of selected
+   *  option prices (base ignored); 'additive' (default) = base + option prices. */
+  addon_pricing_mode?: 'absolute' | 'additive';
   metadata?: Record<string, unknown>;
 }
 
@@ -230,6 +233,13 @@ export interface PaymentSession {
 
 export interface PaymentMethodsResponse {
   channels: PaymentChannel[];
+  gateways?: Array<{
+    id: string;
+    label: string;
+    channels: string[];
+    mobile_money_providers?: string[];
+    mobile_money_provider_labels?: Record<string, string>;
+  }>;
   [key: string]: unknown;
 }
 
