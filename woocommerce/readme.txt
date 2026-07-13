@@ -4,7 +4,7 @@ Tags: ai, commerce, woocommerce, ai-agents, checkout
 Requires at least: 6.0
 Tested up to: 7.0
 Requires PHP: 8.2
-Stable tag: 0.4.8
+Stable tag: 0.4.9
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -68,7 +68,7 @@ Privacy policy: https://synchronity.app/privacy-policy
 Used only if you enable Paystack under Inline Payments and provide your Paystack keys.
 What is sent and when: when a buyer pays in chat, the plugin creates and verifies a transaction with Paystack for the order amount and currency. No card data is handled by the plugin.
 Terms of service: https://paystack.com/terms
-Privacy policy: https://paystack.com/privacy
+Privacy policy: https://paystack.com/privacy/merchant
 
 **Stripe — optional (in-chat payments)**
 Used only if you enable Stripe under Inline Payments and provide your Stripe keys (or have the official Stripe plugin configured).
@@ -83,6 +83,10 @@ Terms of service: https://www.paypal.com/legalhub/home
 Privacy policy: https://www.paypal.com/myaccount/privacy/privacyHub
 
 == Changelog ==
+
+= 0.4.9 =
+* Fix: corrected the Paystack privacy policy link (was https://paystack.com/privacy, which 404s) to the Merchant Privacy Policy at https://paystack.com/privacy/merchant, per wp.org review.
+* Fix: the card-payment return landing now inlines its styles as element attributes instead of a stylesheet block, resolving the wp.org enqueue finding for that standalone (non-template) page.
 
 = 0.4.8 =
 * Schema hint for LLM discovery is now off by default and only runs after the connector is configured (no requests before setup).
