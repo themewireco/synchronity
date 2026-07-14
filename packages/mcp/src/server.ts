@@ -729,8 +729,23 @@ export function createMCPServer(config: {
     'CHECKOUT: checkout + payment require the buyer\'s explicit approval (a one-time emailed code). Never approve on the buyer\'s behalf, never guess the code, and never claim a purchase succeeded until payment status is paid or the order is processing/completed.',
   ].join('\n');
 
+  // Advertise the Synchronity brand mark + site so hosts that render server
+  // icons (Claude web/desktop custom connectors, the MCP directory) show the
+  // logo instead of a generic placeholder. Icons are served by the gateway
+  // (branding.ts: /icon.png 512², /icon-256.png 256²) so the URLs track whatever
+  // gateway this server points at (prod/staging/local).
+  const iconBase = config.gatewayUrl.replace(/\/+$/, '');
   const server = new Server(
-    { name: 'synchronity-mcp', version: '0.2.0' },
+    {
+      name: 'synchronity-mcp',
+      title: 'Synchronity',
+      version: '0.2.0',
+      websiteUrl: 'https://synchronity.app',
+      icons: [
+        { src: `${iconBase}/icon-256.png`, mimeType: 'image/png', sizes: ['256x256'] },
+        { src: `${iconBase}/icon.png`, mimeType: 'image/png', sizes: ['512x512'] },
+      ],
+    },
     { capabilities: { tools: {}, resources: {} }, instructions: SERVER_INSTRUCTIONS },
   );
 
