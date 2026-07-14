@@ -158,17 +158,28 @@ body {
 .syn-muted { color: var(--syn-muted); }
 .syn-err { color: var(--syn-danger); font-size: 12px; }
 
-/* Toast stack — floats at the bottom of the view so errors never reflow a card. */
+/* Toast stack — sticky-fixed at the bottom of the viewport so add-to-cart
+   confirmations and errors stay visible without reflowing a card. */
 .syn-toasts { position: fixed; left: 0; right: 0; bottom: 16px; display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; z-index: 9999; }
 .syn-toast {
-  max-width: min(440px, 90vw); background: var(--syn-ink-title); color: #fff; font-size: 13.5px; line-height: 1.4;
+  max-width: min(440px, 90vw); background: var(--syn-ink-title); color: #fff; font-size: 13.5px; line-height: 1.4; font-weight: 500;
   padding: 11px 16px; border-radius: 12px; box-shadow: 0 6px 20px rgba(16,40,28,.22);
   opacity: 1; transform: translateY(0); transition: opacity .4s ease, transform .4s ease;
+}
+/* Add-to-cart confirmation: brand-green with a leading check. */
+.syn-toast-success { background: var(--syn-green); }
+.syn-toast-success::before {
+  content: ""; display: inline-block; width: 15px; height: 15px; margin-right: 8px; vertical-align: -2px;
+  background: no-repeat center / contain url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none'%3E%3Cpath d='M5 13l4 4L19 7' stroke='%23ffffff' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 .syn-toast-out { opacity: 0; transform: translateY(8px); }
 
 /* ── Product list ── */
-.syn-listhead-bar { display: flex; align-items: center; justify-content: space-between; padding: 4px 6px 16px; }
+/* Header holds the shopping bag; sticky so it (and the live count) stay in reach
+   as the buyer scrolls a long catalogue on hosts that scroll the widget. The
+   canvas background masks rows sliding under it. */
+.syn-listhead-bar { position: sticky; top: 0; z-index: 20; background: var(--syn-canvas); display: flex; align-items: center; justify-content: space-between; padding: 12px 6px 14px; }
+html[data-syn-host="openai"] .syn-listhead-bar { background: var(--syn-bg); }
 .syn-listhead-title { font-size: 15px; font-weight: 500; color: var(--syn-muted-head); }
 .syn-list { display: flex; flex-direction: column; }
 .syn-listempty { padding: 22px; font-size: 14px; color: var(--syn-muted); text-align: center; }
@@ -389,7 +400,8 @@ body {
 .syn-wizard-foot .spacer { flex: 1; }
 
 /* ── Cart (Figma: Your cart) ── */
-.syn-cart-head { display: flex; align-items: center; justify-content: space-between; padding: 4px 6px 16px; }
+.syn-cart-head { position: sticky; top: 0; z-index: 20; background: var(--syn-canvas); display: flex; align-items: center; justify-content: space-between; padding: 12px 6px 14px; }
+html[data-syn-host="openai"] .syn-cart-head { background: var(--syn-bg); }
 .syn-cart-head .t { font-size: 16px; color: var(--syn-ink-title); }
 .syn-cart-head .id { font-size: 14px; color: var(--syn-muted); }
 .syn-stack { display: flex; flex-direction: column; gap: 18px; }

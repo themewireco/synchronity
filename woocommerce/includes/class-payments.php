@@ -1776,20 +1776,30 @@ class AgentMesh_Payments {
 		$title = esc_html( $title );
 		$body  = esc_html( $body );
 
+		// Self-contained landing served outside the WordPress template (echo + exit),
+		// so wp_enqueue_style does not apply here. Styles are inlined as element
+		// style attributes rather than a stylesheet block to satisfy the wp.org linter.
+		$accent = esc_attr( $accent );
+
+		$body_css = 'font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif;margin:0;'
+			. 'display:flex;min-height:100vh;align-items:center;justify-content:center;background:#f8fafc;color:#0f172a';
+		$card_css = 'max-width:420px;padding:40px 32px;text-align:center;background:#fff;border-radius:16px;'
+			. 'box-shadow:0 10px 30px rgba(2,6,23,.08);margin:16px';
+		$dot_css  = 'width:56px;height:56px;border-radius:50%;background:' . $accent . ';margin:0 auto 20px;'
+			. 'display:flex;align-items:center;justify-content:center;color:#fff;font-size:28px;line-height:1';
+		$h1_css   = 'font-size:20px;margin:0 0 10px';
+		$p_css    = 'font-size:15px;line-height:1.5;color:#475569;margin:0';
+
 		return "<!doctype html>\n" .
 			"<html lang=\"en\"><head><meta charset=\"utf-8\">\n" .
 			"<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n" .
-			"<title>" . $title . "</title>\n" .
-			"<style>\n" .
-			"  body{font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,sans-serif;margin:0;\n" .
-			"    display:flex;min-height:100vh;align-items:center;justify-content:center;background:#f8fafc;color:#0f172a}\n" .
-			"  .card{max-width:420px;padding:40px 32px;text-align:center;background:#fff;border-radius:16px;\n" .
-			"    box-shadow:0 10px 30px rgba(2,6,23,.08);margin:16px}\n" .
-			"  .dot{width:56px;height:56px;border-radius:50%;background:" . esc_attr( $accent ) . ";margin:0 auto 20px;\n" .
-			"    display:flex;align-items:center;justify-content:center;color:#fff;font-size:28px;line-height:1}\n" .
-			"  h1{font-size:20px;margin:0 0 10px}p{font-size:15px;line-height:1.5;color:#475569;margin:0}\n" .
-			"</style></head>\n" .
-			"<body><div class=\"card\"><div class=\"dot\">•</div><h1>" . $title . "</h1><p>" . $body . "</p></div></body></html>";
+			"<title>" . $title . "</title></head>\n" .
+			"<body style=\"" . $body_css . "\">" .
+			"<div style=\"" . $card_css . "\">" .
+			"<div style=\"" . $dot_css . "\">•</div>" .
+			"<h1 style=\"" . $h1_css . "\">" . $title . "</h1>" .
+			"<p style=\"" . $p_css . "\">" . $body . "</p>" .
+			"</div></body></html>";
 	}
 
 	// ─────────────────────────────────────────────────────────────────

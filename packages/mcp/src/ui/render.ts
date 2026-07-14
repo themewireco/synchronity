@@ -408,6 +408,9 @@ function addToCartButton(
       if (sc?.cartId) setActiveCartId(siteId, sc.cartId);
       setLabel('Added ✓');
       setCartCount(siteId, sc?.items);
+      // Confirm the add with a floating toast — the button label reverts and may
+      // be scrolled out of view, so a sticky toast is what the buyer actually sees.
+      showButtonNote(btn, extra.quantity > 1 ? `Added ${extra.quantity} to cart` : 'Added to cart', 'success');
       // Repaint every shopping bag on the page so the badge updates immediately
       // (the wizard/list/product bags are separate instances).
       for (const b of document.querySelectorAll('.syn-bag')) (b as BagButton).repaint?.();
@@ -430,14 +433,14 @@ function addToCartButton(
  * bottom of the view instead of injecting inline next to the button, so it never
  * reflows the card. `btn` is kept for call-site compatibility (unused for layout).
  */
-function showButtonNote(_btn: HTMLElement, msg: string): void {
+function showButtonNote(_btn: HTMLElement, msg: string, variant: 'default' | 'success' = 'default'): void {
   let host = document.getElementById('syn-toasts');
   if (!host) {
     host = el('div', 'syn-toasts');
     host.id = 'syn-toasts';
     document.body.appendChild(host);
   }
-  const toast = el('div', 'syn-toast');
+  const toast = el('div', variant === 'success' ? 'syn-toast syn-toast-success' : 'syn-toast');
   toast.textContent = msg.slice(0, 200);
   host.appendChild(toast);
   // Fade out then remove.
