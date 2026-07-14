@@ -68,7 +68,7 @@ Privacy policy: https://synchronity.app/privacy-policy
 Used only if you enable Paystack under Inline Payments and provide your Paystack keys.
 What is sent and when: when a buyer pays in chat, the plugin creates and verifies a transaction with Paystack for the order amount and currency. No card data is handled by the plugin.
 Terms of service: https://paystack.com/terms
-Privacy policy: https://paystack.com/privacy/merchant
+Privacy policy: https://paystack.com/terms
 
 **Stripe — optional (in-chat payments)**
 Used only if you enable Stripe under Inline Payments and provide your Stripe keys (or have the official Stripe plugin configured).
@@ -85,7 +85,7 @@ Privacy policy: https://www.paypal.com/myaccount/privacy/privacyHub
 == Changelog ==
 
 = 0.4.9 =
-* Fix: corrected the Paystack privacy policy link (was https://paystack.com/privacy, which 404s) to the Merchant Privacy Policy at https://paystack.com/privacy/merchant, per wp.org review.
+* Fix: updated the Paystack privacy policy link to the Terms and Conditions / Privacy Policy at https://paystack.com/terms, per wp.org review.
 * Fix: the card-payment return landing now inlines its styles as element attributes instead of a stylesheet block, resolving the wp.org enqueue finding for that standalone (non-template) page.
 
 = 0.4.8 =
