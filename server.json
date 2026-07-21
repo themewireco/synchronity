@@ -1,0 +1,48 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.themewireco/synchronity",
+  "title": "Synchronity",
+  "description": "Shop connected e-commerce stores: search, compare, cart, and checkout with buyer approval.",
+  "version": "0.5.21",
+  "websiteUrl": "https://synchronity.app",
+  "icons": [
+    {
+      "src": "https://api.synchronity.app/icon.png",
+      "mimeType": "image/png",
+      "sizes": ["512x512"]
+    }
+  ],
+  "repository": {
+    "url": "https://github.com/themewireco/synchronity",
+    "source": "github"
+  },
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://api.synchronity.app/mcp"
+    }
+  ],
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@synchronity/mcp-server",
+      "version": "0.5.21",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "GATEWAY_URL",
+          "description": "Synchronity gateway base URL. Defaults to the hosted gateway.",
+          "default": "https://api.synchronity.app",
+          "isRequired": false
+        },
+        {
+          "name": "DEFAULT_SITE_ID",
+          "description": "Optional store ID to use when the assistant does not name a store.",
+          "isRequired": false
+        }
+      ]
+    }
+  ]
+}

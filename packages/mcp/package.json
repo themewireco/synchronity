@@ -1,7 +1,13 @@
 {
   "name": "@synchronity/mcp-server",
   "version": "0.1.1",
-  "description": "Synchronity MCP Server - Exposes all 11 Synchronity tools as Model Context Protocol endpoints for Claude, ChatGPT, and other LLM agents",
+  "mcpName": "io.github.themewireco/synchronity",
+  "description": "Synchronity MCP Server - shop across connected e-commerce stores from Claude, ChatGPT, and other MCP clients",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/themewireco/synchronity.git"
+  },
+  "homepage": "https://synchronity.app",
   "publishConfig": {
     "access": "public"
   },
@@ -46,11 +52,12 @@
     "vitest": "^4.1.8"
   },
   "keywords": [
-    "agentmesh",
+    "synchronity",
+    "ecommerce",
     "mcp",
     "claude",
     "ai",
     "agents"
   ],
-  "license": "UNLICENSED"
+  "license": "MIT"
 }
