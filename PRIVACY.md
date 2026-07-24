@@ -22,7 +22,7 @@ We do **not** collect the contents of your AI conversations. The MCP server only
 
 To complete an action, request data is shared only with:
 
-- **Connected merchant storefronts** (e.g. WooCommerce, Shopify) — to fulfil the specific action you requested on that store.
+- **Connected merchant storefronts** (e.g. WooCommerce) — to fulfil the specific action you requested on that store.
 - **Payment processors** (e.g. Paystack) — to process payments you authorize.
 
 We do not sell your data, and we do not use it to train AI models.
